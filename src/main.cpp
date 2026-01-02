@@ -112,6 +112,7 @@ int WINAPI WinMain(
     else
     {
       printf("Failed to create a window.");
+
     }
   }
   else
