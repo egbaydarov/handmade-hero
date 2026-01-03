@@ -10,9 +10,9 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
-
         cross = pkgs.pkgsCross.mingwW64;
-        wine = pkgs.wineWowPackages.stable;
+
+        wine = pkgs.wineWowPackages.waylandFull;
       in
       {
         devShells.default = pkgs.mkShell {
@@ -27,7 +27,6 @@
 
             wine
 
-            # MinGW-w64 cross toolchain (includes sysroot headers/libs)
             cross.stdenv.cc
           ];
 
@@ -61,6 +60,7 @@
               ]
             EOF
 
+            echo "Wine: $(command -v wine)"
             echo "MinGW target: $TARGET"
           '';
         };
