@@ -31,7 +31,6 @@ RenderGradient(int xOffset, int yOffset)
 
         for (int x = 255 - (u8)xOffset; x < g_bitmapWidth; ++x)
         {
-            // blue
             u8 b = (u8)x;
             u8 g = (u8)y;
             u8 r = (u8)(x * y + xOffset + yOffset);
@@ -158,7 +157,7 @@ WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR cmdLine, int showCmd)
     (void)showCmd;
 
     WNDCLASSA windowClass = {0};
-    windowClass.style         = CS_OWNDC | CS_HREDRAW | CS_VREDRAW;
+    windowClass.style         = CS_HREDRAW | CS_VREDRAW;
     windowClass.lpfnWndProc   = Win32MainWindowCallback;
     windowClass.hInstance     = instance;
     windowClass.lpszClassName = "HandmadeHeroWindowClass";
