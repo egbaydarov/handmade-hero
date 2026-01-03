@@ -1,7 +1,12 @@
-time $CXX \
-  src/main.cpp \
-  -g \
-  -o build/main.exe \
-  -l user32 \
-  -l gdi32
+(
+  cd build || exit 1
+  bear --append -- $CXX ../src/main.cpp -g3 -gcodeview -o main.exe -luser32 -lgdi32
+  time "$CXX" \
+    ../src/main.cpp \
+    -g3 \
+    -gcodeview \
+    -o main.exe \
+    -l user32 \
+    -l gdi32
+)
 

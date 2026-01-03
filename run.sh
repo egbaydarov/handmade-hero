@@ -1,2 +1,1 @@
-wine ./build/main.exe
-
+wine64 build/main.exe

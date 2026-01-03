@@ -1,10 +1,10 @@
-#include <stdio.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <windows.h>
 
 #define GLOBAL_VARIABLE static
-#define LOCAL_PERSIST   static
-#define INTERNAL        static
+#define LOCAL_PERSIST static
+#define INTERNAL static
 
 typedef uint8_t  u8;
 typedef uint16_t u16;
@@ -29,13 +29,15 @@ RenderGradient(int xOffset, int yOffset)
     {
         u32 *pixel = (u32 *)row;
 
-        for (int x = 255 - (u8)xOffset; x < g_bitmapWidth; ++x)
+        // for (int x = 255 - (u8)xOffset; x < g_bitmapWidth; ++x)
+        for (int x = 0; x < g_bitmapWidth; ++x)
         {
             u8 b = (u8)x;
             u8 g = (u8)y;
             u8 r = (u8)(x * y + xOffset + yOffset);
 
-            *pixel++ = (b << 24) | (g << 16) | (r << 8);
+            *pixel++ = (b << 24) | (g << 16) | (r << 8) | 255;
+            //*pixel++ = 0xFF0000FF;
         }
 
         row += pitch;
@@ -50,36 +52,47 @@ Win32ResizeDIBSection(int width, int height)
         VirtualFree(g_bitmapMemory, 0, MEM_RELEASE);
     }
 
-    g_bitmapWidth  = width;
+    g_bitmapWidth = width;
     g_bitmapHeight = height;
 
-    g_bitmapInfo.bmiHeader.biSize        = sizeof(g_bitmapInfo.bmiHeader);
-    g_bitmapInfo.bmiHeader.biWidth       = g_bitmapWidth;
-    g_bitmapInfo.bmiHeader.biHeight      = g_bitmapHeight;
-    g_bitmapInfo.bmiHeader.biPlanes      = 1;
-    g_bitmapInfo.bmiHeader.biBitCount    = 32;
+    g_bitmapInfo.bmiHeader.biSize = sizeof(g_bitmapInfo.bmiHeader);
+    g_bitmapInfo.bmiHeader.biWidth = g_bitmapWidth;
+    g_bitmapInfo.bmiHeader.biHeight = g_bitmapHeight;
+    g_bitmapInfo.bmiHeader.biPlanes = 1;
+    g_bitmapInfo.bmiHeader.biBitCount = 32;
     g_bitmapInfo.bmiHeader.biCompression = BI_RGB;
 
     int bitmapMemorySize = g_bytesPerPixel * g_bitmapWidth * g_bitmapHeight;
-    g_bitmapMemory = VirtualAlloc(0, bitmapMemorySize, MEM_COMMIT, PAGE_READWRITE);
+    g_bitmapMemory = VirtualAlloc(
+        0,
+        bitmapMemorySize,
+        MEM_COMMIT,
+        PAGE_READWRITE);
+    printf("%dx%d p=0x%p\n", width, height, g_bitmapMemory);
 }
 
 INTERNAL void
 Win32UpdateWindow(
-    HDC hdc,
+    HDC   hdc,
     RECT *clientRect,
-    int x,
-    int y,
-    int width,
-    int height)
+    int   x,
+    int   y,
+    int   width,
+    int   height)
 {
-    int windowWidth  = clientRect->right - clientRect->left;
+    int windowWidth = clientRect->right - clientRect->left;
     int windowHeight = clientRect->bottom - clientRect->top;
 
     StretchDIBits(
         hdc,
-        0, 0, g_bitmapWidth, g_bitmapHeight,
-        0, 0, windowWidth, windowHeight,
+        0,
+        0,
+        g_bitmapWidth,
+        g_bitmapHeight,
+        0,
+        0,
+        windowWidth,
+        windowHeight,
         g_bitmapMemory,
         &g_bitmapInfo,
         DIB_RGB_COLORS,
@@ -93,57 +106,63 @@ Win32MainWindowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 
     switch (message)
     {
-        case WM_SIZE:
-        {
-            RECT rect;
-            BOOL ok = GetClientRect(window, &rect);
-            (void)ok;
+    case WM_SIZE:
+    {
+        RECT rect;
+        BOOL ok = GetClientRect(window, &rect);
+        (void)ok;
 
-            LONG width  = rect.right - rect.left;
-            LONG height = rect.bottom - rect.top;
+        LONG width = rect.right - rect.left;
+        LONG height = rect.bottom - rect.top;
 
-            Win32ResizeDIBSection((int)width, (int)height);
-        } break;
+        Win32ResizeDIBSection((int)width, (int)height);
+    }
+    break;
 
-        case WM_ACTIVATEAPP:
-        {
-            printf("WM_ACTIVATEAPP\n");
-        } break;
+    case WM_ACTIVATEAPP:
+    {
+        printf("WM_ACTIVATEAPP\n");
+    }
+    break;
 
-        case WM_DESTROY:
-        {
-            g_running = false;
-        } break;
+    case WM_DESTROY:
+    {
+        g_running = false;
+    }
+    break;
 
-        case WM_CLOSE:
-        {
-            g_running = false;
-        } break;
+    case WM_CLOSE:
+    {
+        g_running = false;
+    }
+    break;
 
-        case WM_PAINT:
-        {
-            PAINTSTRUCT paint;
-            HDC hdc = BeginPaint(window, &paint);
+    case WM_PAINT:
+    {
+        PAINTSTRUCT paint;
+        HDC         hdc = BeginPaint(window, &paint);
 
-            LONG x      = paint.rcPaint.left;
-            LONG y      = paint.rcPaint.top;
-            LONG width  = paint.rcPaint.right - paint.rcPaint.left;
-            LONG height = paint.rcPaint.bottom - paint.rcPaint.top;
+        LONG x = paint.rcPaint.left;
+        LONG y = paint.rcPaint.top;
+        LONG width = paint.rcPaint.right - paint.rcPaint.left;
+        LONG height = paint.rcPaint.bottom - paint.rcPaint.top;
 
-            RECT rect;
-            BOOL ok = GetClientRect(window, &rect);
-            (void)ok;
+        RECT rect;
+        BOOL ok = GetClientRect(window, &rect);
+        (void)ok;
 
-            Win32UpdateWindow(hdc, &rect, (int)x, (int)y, (int)width, (int)height);
+        Win32UpdateWindow(hdc, &rect, (int)x, (int)y, (int)width, (int)height);
 
-            BOOL endPaintOk = EndPaint(window, &paint);
-            (void)endPaintOk;
-        } break;
+        BOOL endPaintOk = EndPaint(window, &paint);
+        (void)endPaintOk;
+    }
+    break;
 
-        default:
-        {
-            result = DefWindowProc(window, message, wParam, lParam);
-        } break;
+    default:
+    {
+        result = DefWindowProc(window, message, wParam, lParam);
+    }
+    break;
     }
 
     return result;
@@ -157,9 +176,9 @@ WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR cmdLine, int showCmd)
     (void)showCmd;
 
     WNDCLASSA windowClass = {0};
-    windowClass.style         = CS_HREDRAW | CS_VREDRAW;
-    windowClass.lpfnWndProc   = Win32MainWindowCallback;
-    windowClass.hInstance     = instance;
+    windowClass.style = CS_HREDRAW | CS_VREDRAW;
+    windowClass.lpfnWndProc = Win32MainWindowCallback;
+    windowClass.hInstance = instance;
     windowClass.lpszClassName = "HandmadeHeroWindowClass";
 
     if (RegisterClassA(&windowClass))
@@ -226,4 +245,3 @@ WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR cmdLine, int showCmd)
 
     return 0;
 }
-

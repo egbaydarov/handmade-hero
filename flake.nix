@@ -1,5 +1,5 @@
 {
-  description = "mingw-w64 cross compile + wine dev shell (fixed)";
+  description = "mingw-w64 cross compile + wine dev shell";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -42,9 +42,24 @@
             export WINEDEBUG=-all
             export WINEPREFIX="$PWD/.wine"
 
+            GPP="$(command -v x86_64-w64-mingw32-g++)"
+            SYSROOT="$(dirname "$(dirname "$(readlink -f "$GPP")")")/x86_64-w64-mingw32"
+            WININC="$(ls -d /nix/store/*-mingw-w64-x86_64-w64-mingw32-*/include | head -n1)"
+
+            cat > .clangd <<EOF
+            CompileFlags:
+              Add: [
+                "--target=x86_64-w64-windows-gnu",
+                "--sysroot=$SYSROOT",
+                "-nostdinc",
+                "-nostdinc++",
+                "-isystem", "$WININC",
+                "-isystem", "$SYSROOT/include",
+                "-isystem", "$SYSROOT/usr/include"
+              ]
+            EOF
+
             echo "MinGW target: $TARGET"
-            echo "Build: $CXX -O2 -o app.exe main.cpp"
-            echo "Run:   wine ./app.exe"
           '';
         };
       });

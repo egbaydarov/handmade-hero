@@ -1,0 +1,29 @@
+BasedOnStyle: LLVM
+
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ContinuationIndentWidth: 4
+
+ColumnLimit: 80
+
+# ---- Function declarations / definitions ----
+AlwaysBreakAfterReturnType: All
+BinPackParameters: false
+AllowAllParametersOfDeclarationOnNextLine: false
+
+# ---- Function calls ----
+BinPackArguments: false
+AllowAllArgumentsOnNextLine: false
+AlignAfterOpenBracket: AlwaysBreak
+
+# ---- Assignment + call breaking ----
+BreakBeforeBinaryOperators: NonAssignment
+PenaltyBreakAssignment: 1000
+
+# ---- Braces ----
+BreakBeforeBraces: Allman
+
+# ---- Alignment ----
+AlignConsecutiveDeclarations: true
+

@@ -1,0 +1,10 @@
+CompileFlags:
+  Add: [
+    "--target=x86_64-w64-windows-gnu",
+    "--sysroot=/nix/store/0v7hbxg5vpcyij6ca1ilxm7wfs0vdpdi-x86_64-w64-mingw32-gcc-wrapper-15.2.0/x86_64-w64-mingw32",
+    "-nostdinc",
+    "-nostdinc++",
+    "-isystem", "/nix/store/ykig5mj25xfm6zgxppj4xk3grfrrv5yb-mingw-w64-x86_64-w64-mingw32-13.0.0-dev/include",
+    "-isystem", "/nix/store/0v7hbxg5vpcyij6ca1ilxm7wfs0vdpdi-x86_64-w64-mingw32-gcc-wrapper-15.2.0/x86_64-w64-mingw32/include",
+    "-isystem", "/nix/store/0v7hbxg5vpcyij6ca1ilxm7wfs0vdpdi-x86_64-w64-mingw32-gcc-wrapper-15.2.0/x86_64-w64-mingw32/usr/include"
+  ]
