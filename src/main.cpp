@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdint.h>
 #include <windows.h>
 
 #define global_variable static
@@ -9,52 +10,75 @@ global_variable bool Running;
 global_variable BITMAPINFO BitmapInfo;
 global_variable void *BitmapMemory;
 global_variable HBITMAP BitmapHandle;
-global_variable HDC BitmapDeviceContext;
+global_variable int BitmapWidth;
+global_variable int BitmapHeight;
+global_variable int BytesPerPixel = 4; 
+
+typedef uint8_t uint8;
+typedef uint16_t uint16;
+typedef uint32_t uint32;
+typedef uint64_t uint64;
+
+internal void
+RenderGradient(int xOffset, int yOffset)
+{
+  int pitch = BitmapWidth * BytesPerPixel;
+  uint8 *row = (uint8*)BitmapMemory;
+  for (int y = 0; y < BitmapHeight; ++y)
+  {
+    uint32 *pixel = (uint32 *)row;
+    for (int x = 255 - (uint8)xOffset; x < BitmapWidth; ++x)
+    {
+      //blue
+      uint8 b = x;
+      uint8 g = y;
+      uint8 r = x * y + xOffset + yOffset;
+      *pixel++ = (b << 24 | g << 16 | r << 8);
+    }
+
+    row += pitch;
+  }
+}
 
 internal void
 Win32ResizeDIBSection(
     int width,
     int height)
 {
-  if (BitmapHandle)
+  if (BitmapMemory)
   {
-    DeleteObject(BitmapHandle);
+    VirtualFree(BitmapMemory, 0, MEM_RELEASE);
   }
 
-  if (!BitmapDeviceContext)
-  {
-    BitmapDeviceContext = CreateCompatibleDC(0);
-  }
-
+  BitmapWidth = width;
+  BitmapHeight = height;
   BitmapInfo.bmiHeader.biSize = sizeof(BitmapInfo.bmiHeader);
-  BitmapInfo.bmiHeader.biWidth = width;
-  BitmapInfo.bmiHeader.biHeight = height;
+  BitmapInfo.bmiHeader.biWidth = BitmapWidth;
+  BitmapInfo.bmiHeader.biHeight = BitmapHeight;
   BitmapInfo.bmiHeader.biPlanes = 1;
   BitmapInfo.bmiHeader.biBitCount = 32;
   BitmapInfo.bmiHeader.biCompression = BI_RGB;
 
-  HBITMAP bitmapHandle = CreateDIBSection(
-    BitmapDeviceContext,
-    &BitmapInfo,
-    DIB_RGB_COLORS,
-    &BitmapMemory,
-    0,
-    0
-  );
+  int bitmapMemorySize = BytesPerPixel * BitmapWidth * BitmapHeight;
+  BitmapMemory = VirtualAlloc(0, bitmapMemorySize, MEM_COMMIT, PAGE_READWRITE);
 }
+
 
 internal void
 Win32UpdateWindow(
     HDC hdc,
+    RECT *clientRect,
     int x,
     int y,
-    int width,
-    int height)
+    int height,
+    int width)
 {
+  int windowWidth = clientRect->right - clientRect->left;
+  int windowHeight = clientRect->bottom - clientRect->top;
   StretchDIBits(
     hdc,
-    x, y, width, height,
-    x, y, width, height,
+    0, 0, BitmapWidth, BitmapHeight,
+    0, 0, windowWidth, windowHeight,
     BitmapMemory,
     &BitmapInfo,
     DIB_RGB_COLORS,
@@ -97,7 +121,9 @@ LRESULT Win32MainWindowCallback(
       LONG y = paint.rcPaint.top;
       LONG height = paint.rcPaint.bottom - paint.rcPaint.top;
       LONG width = paint.rcPaint.right - paint.rcPaint.left;
-      Win32UpdateWindow(deviceContext, x, y, width, height);
+      RECT rect;
+      BOOL ok = GetClientRect(Wnd, &rect);
+      Win32UpdateWindow(deviceContext, &rect, x, y, width, height);
       BOOL EndPaintResult = EndPaint(Wnd, &paint);
     } break;
     default:
@@ -149,18 +175,29 @@ int WINAPI WinMain(
     {
       MSG Message;
       Running = true;
+      int xOffset = 0;
+      int yOffset = 0;
       while(Running)
       {
-        BOOL MessageResult = GetMessage(&Message, 0, 0, 0);
-        if (MessageResult > 0)
+        MSG message;
+        while (PeekMessage(&message, 0, 0, 0, PM_REMOVE))
         {
-          TranslateMessage(&Message);
-          DispatchMessage(&Message);
+          if (message.message == WM_QUIT)
+          {
+            Running = false;
+          }
+          TranslateMessage(&message);
+          DispatchMessage(&message);
         }
-        else
-        {
-          break;
-        }
+        RECT rect;
+        BOOL ok = GetClientRect(windowHandle, &rect);
+        HDC deviceContext = GetDC(windowHandle);
+        RenderGradient(xOffset, yOffset);
+        Win32UpdateWindow(deviceContext, &rect, 0, 0, 0, 0);
+        ReleaseDC(windowHandle, deviceContext);
+        ++xOffset;
+        ++xOffset;
+        --yOffset;
       }
     }
     else
