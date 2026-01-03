@@ -23,6 +23,8 @@
             pkgs.pkg-config
             pkgs.bear
             pkgs.clang-tools
+            pkgs.llvmPackages.llvm
+
             wine
 
             # MinGW-w64 cross toolchain (includes sysroot headers/libs)
