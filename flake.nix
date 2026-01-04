@@ -25,6 +25,7 @@
             pkgs.clang-tools
             pkgs.llvmPackages.llvm
 
+            # controller shit
             wine
 
             cross.stdenv.cc

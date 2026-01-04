@@ -5,7 +5,7 @@ TabWidth: 4
 UseTab: Never
 ContinuationIndentWidth: 4
 
-ColumnLimit: 80
+ColumnLimit: 0
 
 # ---- Function declarations / definitions ----
 AlwaysBreakAfterReturnType: All
@@ -18,14 +18,16 @@ AllowAllArgumentsOnNextLine: false
 AlignAfterOpenBracket: AlwaysBreak
 
 # ---- Assignment + call breaking ----
-BreakBeforeBinaryOperators: NonAssignment
-PenaltyBreakAssignment: 1000
+BreakBeforeBinaryOperators: None
+PenaltyBreakAssignment: 10000
+PenaltyBreakBeforeFirstCallParameter: 10000
+PenaltyExcessCharacter: 1000000
 
 # ---- Braces ----
 BreakBeforeBraces: Allman
 
 # ---- Alignment ----
-AlignConsecutiveDeclarations: true
+AlignConsecutiveMacros: true
 
 # ---- File handling ----
 InsertNewlineAtEOF: true

@@ -20,11 +20,12 @@ mkdir -p -- "$BUILD_DIR"
   #    -luser32 -lgdi32
   #3 -gdwarf64 -gstrict-dwarf -ginline-points -gstatement-frontiers -gvariable-location-views \
   bear --append -- \
-    "$CXX" ../src/main.cpp \
+    x86_64-w64-mingw32-gcc ../src/main.cpp \
       -g3 -gcodeview \
       -ftime-report \
       -O0 \
       -o main.exe \
-      -luser32 -lgdi32
+      -luser32 \
+      -lgdi32
 )
 
