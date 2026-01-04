@@ -27,3 +27,6 @@ BreakBeforeBraces: Allman
 # ---- Alignment ----
 AlignConsecutiveDeclarations: true
 
+# ---- File handling ----
+InsertNewlineAtEOF: true
+

@@ -26,6 +26,8 @@ struct win32_window_dimension
     int height;
 };
 
+GLOBAL_VARIABLE int                    xOffset = 0;
+GLOBAL_VARIABLE int                    yOffset = 0;
 GLOBAL_VARIABLE bool                   g_running;
 GLOBAL_VARIABLE win32_offscreen_buffer g_backBuffer;
 
@@ -58,11 +60,14 @@ RenderShit(win32_offscreen_buffer *buffer, int xOffset, int yOffset)
         // for (int x = 255 - (u8)xOffset; x < g_bitmapWidth; ++x)
         for (int x = 0; x < buffer->bitmapWidth; ++x)
         {
-            u8 b = (u8)x;
-            u8 g = (u8)y;
-            u8 r = (u8)(x * y + xOffset + yOffset);
+            // u8 r = (u8)(x * y + xOffset + yOffset);
+            u8 r = 0;
+            u8 b = (u8)x + xOffset;
+            u8 g = (u8)y + yOffset;
 
-            *pixel++ = (b << 24) | (g << 16) | (r << 8) | 255;
+            // win format (bbggrraa) : le format (aarrggbb)
+            *pixel++ = (255 << 24) | (r << 16) | (g << 8) | b;
+
             //*pixel++ = 0xFF0000FF;
         }
 
@@ -168,6 +173,9 @@ Win32MainWindowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 
         BOOL endPaintOk = EndPaint(window, &paint);
         (void)endPaintOk;
+        ++xOffset;
+        ++xOffset;
+        --yOffset;
     }
     break;
 
@@ -191,7 +199,7 @@ WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR cmdLine, int showCmd)
     Win32ResizeDIBSection(&g_backBuffer, 2560, 1280);
 
     WNDCLASSA windowClass = {0};
-    windowClass.style = CS_HREDRAW | CS_VREDRAW;
+    windowClass.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
     windowClass.lpfnWndProc = Win32MainWindowCallback;
     windowClass.hInstance = instance;
     windowClass.lpszClassName = "HandmadeHeroWindowClass";
@@ -214,9 +222,10 @@ WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR cmdLine, int showCmd)
 
         if (window)
         {
+            // NOTE(byda): depends on window creation flag (should I create a
+            // hdc each iteration or not)
+            HDC hdc = GetDC(window);
             g_running = true;
-            int xOffset = 0;
-            int yOffset = 0;
 
             while (g_running)
             {
@@ -231,8 +240,6 @@ WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR cmdLine, int showCmd)
                     TranslateMessage(&msg);
                     DispatchMessageA(&msg);
                 }
-
-                HDC hdc = GetDC(window);
 
                 RenderShit(&g_backBuffer, xOffset, yOffset);
 
