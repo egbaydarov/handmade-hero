@@ -1,4 +1,4 @@
 set -e
-./build.sh -O5 -DNDEBUG
+./build.sh -O3 -DNDEBUG
 wine64 build/main.exe 
 

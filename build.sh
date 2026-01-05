@@ -5,7 +5,7 @@ set -e
 if [[ $# -gt 0 ]]; then
   CFLAGS=("$@")
 else
-  CFLAGS=(-O0 -gcodeview)
+  CFLAGS=(-O0 -gcodeview -g)
 fi
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -20,11 +20,11 @@ mkdir -p -- "$BUILD_DIR"
   echo "== compile (bear, verbose) =="
 
   bear --append -- \
-    "$CC" ../src/main.c \
+    ${CLANG:-x86_64-w64-mingw32-clang} ../src/main.c \
       "${CFLAGS[@]}" \
       -ftime-report \
       -fuse-ld=lld \
-      -no-pie \
+      -Wl,--pdb=main.pdb \
       -o main.exe \
       -luser32 \
       -lgdi32

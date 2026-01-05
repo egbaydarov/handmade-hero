@@ -27,12 +27,15 @@
             wine
 
             cross.stdenv.cc
+            cross.llvmPackages.clang
+            cross.llvmPackages.lld
           ];
 
           shellHook = ''
             export TARGET=x86_64-w64-mingw32
 
             export CC=$TARGET-gcc
+            export CLANG=$TARGET-clang
 
             export WINEDEBUG=-all
             export WINEPREFIX="$PWD/.wine"

@@ -453,7 +453,7 @@ WinMain(
     (void)showCmd;
 
     Win32LoadXinput();
-    Win32ResizeDIBSection(&g_backBuffer, 2560, 1280);
+    Win32ResizeDIBSection(&g_backBuffer, 1920, 1080);
 
     WNDCLASSA windowClass = {0};
     windowClass.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
