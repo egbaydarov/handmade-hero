@@ -1,11 +1,13 @@
 #include <dsound.h>
 #include <libloaderapi.h>
+#include <math.h>
 #include <minwinbase.h>
 #include <mmeapi.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <windows.h>
 #include <winerror.h>
+#include <winnt.h>
 #include <xinput.h>
 
 #define GLOBAL_VARIABLE static
@@ -16,6 +18,8 @@ typedef uint8_t u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
+typedef int16_t s16;
+typedef float f32;
 
 struct win32_offscreen_buffer
 {
@@ -37,6 +41,8 @@ GLOBAL_VARIABLE int yOffset = 0;
 GLOBAL_VARIABLE bool g_running;
 GLOBAL_VARIABLE win32_offscreen_buffer g_backBuffer;
 GLOBAL_VARIABLE char g_pressedLetter = 0;
+GLOBAL_VARIABLE IDirectSoundBuffer *secondaryBuffer;
+GLOBAL_VARIABLE bool g_soundBufferInitialized = false;
 
 typedef DWORD WINAPI
 x_input_set_state(DWORD, XINPUT_VIBRATION *);
@@ -97,7 +103,7 @@ Win32LoadDSound(
                 bufferDesc.dwSize = sizeof(bufferDesc);
                 bufferDesc.dwFlags = DSBCAPS_PRIMARYBUFFER;
 
-                LPDIRECTSOUNDBUFFER primaryBuffer;
+                IDirectSoundBuffer *primaryBuffer;
                 if (SUCCEEDED(directSound->CreateSoundBuffer(&bufferDesc, &primaryBuffer, 0)))
                 {
                     printf("[DEBUG] directsound primary buffer created\n");
@@ -109,7 +115,6 @@ Win32LoadDSound(
                         secondaryBufferDesc.dwBufferBytes = bufferSize;
                         secondaryBufferDesc.lpwfxFormat = &waveFormat;
 
-                        LPDIRECTSOUNDBUFFER secondaryBuffer;
                         if (SUCCEEDED(directSound->CreateSoundBuffer(&secondaryBufferDesc, &secondaryBuffer, 0)))
                         {
                             printf("[DEBUG] directsound secondary buffer created\n");
@@ -593,7 +598,7 @@ Win32ResizeDIBSection(
     int bitmapMemorySize = buffer->bytesPerPixel * buffer->bitmapWidth *
                            buffer->bitmapHeight;
     buffer->bitmapMemory =
-        VirtualAlloc(0, bitmapMemorySize, MEM_COMMIT, PAGE_READWRITE);
+        VirtualAlloc(0, bitmapMemorySize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
     printf("%dx%d p=0x%p\n", width, height, buffer->bitmapMemory);
 }
 
@@ -832,6 +837,173 @@ WinMain(
                 vibr.wLeftMotorSpeed = 60000;
                 vibr.wRightMotorSpeed = 60000;
                 // XInputSetState(0, &vibr);
+
+                // Lock and write square wave to sound buffer (once)
+                if (secondaryBuffer && !g_soundBufferInitialized)
+                {
+                    void *region1 = 0;
+                    void *region2 = 0;
+                    DWORD region1Size = 0;
+                    DWORD region2Size = 0;
+                    
+                    DWORD bufferSize = 48000 * sizeof(u16) * 2; // 1 second of audio
+                    HRESULT lockResult = secondaryBuffer->Lock(
+                        0,                    // dwOffset
+                        bufferSize,           // dwBytes
+                        &region1,             // ppvAudioPtr1
+                        &region1Size,        // pdwAudioBytes1
+                        &region2,            // ppvAudioPtr2
+                        &region2Size,        // pdwAudioBytes2
+                        0);                   // dwFlags
+                    
+                    if (SUCCEEDED(lockResult))
+                    {
+                        // Generate a nice beat pattern
+                        u32 sampleRate = 48000;
+                        u32 beatLength = sampleRate; // 1 second beat loop
+                        u32 samplesPerBeat = sampleRate / 4; // 4 beats per second (120 BPM)
+                        
+                        // Write to region 1
+                        s16 *sampleOut = (s16 *)region1;
+                        DWORD sampleCount = region1Size / (sizeof(s16) * 2); // 2 channels
+                        
+                        for (DWORD i = 0; i < sampleCount; ++i)
+                        {
+                            u32 sampleIndex = i;
+                            u32 beatPosition = sampleIndex % beatLength;
+                            u32 beatInMeasure = beatPosition / samplesPerBeat;
+                            u32 positionInBeat = beatPosition % samplesPerBeat;
+                            
+                            s16 leftSample = 0;
+                            s16 rightSample = 0;
+                            
+                            // Kick drum on beats 0 and 2
+                            if (beatInMeasure == 0 || beatInMeasure == 2)
+                            {
+                                if (positionInBeat < 2000) // Short kick
+                                {
+                                    f32 t = (f32)positionInBeat / 48000.0f;
+                                    f32 envelope = expf(-t * 15.0f);
+                                    s16 kick = (s16)(sinf(2.0f * 3.14159f * 60.0f * t) * 12000.0f * envelope);
+                                    leftSample += kick;
+                                    rightSample += kick;
+                                }
+                            }
+                            
+                            // Snare on beats 1 and 3
+                            if (beatInMeasure == 1 || beatInMeasure == 3)
+                            {
+                                if (positionInBeat < 1500) // Short snare
+                                {
+                                    f32 t = (f32)positionInBeat / 48000.0f;
+                                    f32 envelope = expf(-t * 20.0f);
+                                    // Snare: mix of noise and tone
+                                    s16 snare = (s16)((sinf(2.0f * 3.14159f * 200.0f * t) + 
+                                                      sinf(2.0f * 3.14159f * 400.0f * t) * 0.5f) * 
+                                                     8000.0f * envelope);
+                                    leftSample += snare;
+                                    rightSample += snare;
+                                }
+                            }
+                            
+                            // Hi-hat on off-beats
+                            if (positionInBeat < 500 && (beatInMeasure == 0 || beatInMeasure == 2))
+                            {
+                                f32 t = (f32)positionInBeat / 48000.0f;
+                                f32 envelope = expf(-t * 30.0f);
+                                s16 hihat = (s16)(sinf(2.0f * 3.14159f * 8000.0f * t) * 4000.0f * envelope);
+                                leftSample += hihat;
+                                rightSample += hihat;
+                            }
+                            
+                            // Clamp to prevent clipping
+                            if (leftSample > 32767) leftSample = 32767;
+                            if (leftSample < -32768) leftSample = -32768;
+                            if (rightSample > 32767) rightSample = 32767;
+                            if (rightSample < -32768) rightSample = -32768;
+                            
+                            *sampleOut++ = leftSample;
+                            *sampleOut++ = rightSample;
+                        }
+                        
+                        // Write to region 2 if it exists (wraparound)
+                        if (region2)
+                        {
+                            sampleOut = (s16 *)region2;
+                            sampleCount = region2Size / (sizeof(s16) * 2);
+                            
+                            for (DWORD i = 0; i < sampleCount; ++i)
+                            {
+                                u32 sampleIndex = region1Size / (sizeof(s16) * 2) + i;
+                                u32 beatPosition = sampleIndex % beatLength;
+                                u32 beatInMeasure = beatPosition / samplesPerBeat;
+                                u32 positionInBeat = beatPosition % samplesPerBeat;
+                                
+                                s16 leftSample = 0;
+                                s16 rightSample = 0;
+                                
+                                // Kick drum on beats 0 and 2
+                                if (beatInMeasure == 0 || beatInMeasure == 2)
+                                {
+                                    if (positionInBeat < 2000)
+                                    {
+                                        f32 t = (f32)positionInBeat / 48000.0f;
+                                        f32 envelope = expf(-t * 15.0f);
+                                        s16 kick = (s16)(sinf(2.0f * 3.14159f * 60.0f * t) * 12000.0f * envelope);
+                                        leftSample += kick;
+                                        rightSample += kick;
+                                    }
+                                }
+                                
+                                // Snare on beats 1 and 3
+                                if (beatInMeasure == 1 || beatInMeasure == 3)
+                                {
+                                    if (positionInBeat < 1500)
+                                    {
+                                        f32 t = (f32)positionInBeat / 48000.0f;
+                                        f32 envelope = expf(-t * 20.0f);
+                                        s16 snare = (s16)((sinf(2.0f * 3.14159f * 200.0f * t) + 
+                                                          sinf(2.0f * 3.14159f * 400.0f * t) * 0.5f) * 
+                                                         8000.0f * envelope);
+                                        leftSample += snare;
+                                        rightSample += snare;
+                                    }
+                                }
+                                
+                                // Hi-hat on off-beats
+                                if (positionInBeat < 500 && (beatInMeasure == 0 || beatInMeasure == 2))
+                                {
+                                    f32 t = (f32)positionInBeat / 48000.0f;
+                                    f32 envelope = expf(-t * 30.0f);
+                                    s16 hihat = (s16)(sinf(2.0f * 3.14159f * 8000.0f * t) * 4000.0f * envelope);
+                                    leftSample += hihat;
+                                    rightSample += hihat;
+                                }
+                                
+                                // Clamp to prevent clipping
+                                if (leftSample > 32767) leftSample = 32767;
+                                if (leftSample < -32768) leftSample = -32768;
+                                if (rightSample > 32767) rightSample = 32767;
+                                if (rightSample < -32768) rightSample = -32768;
+                                
+                                *sampleOut++ = leftSample;
+                                *sampleOut++ = rightSample;
+                            }
+                        }
+                        
+                        secondaryBuffer->Unlock(region1, region1Size, region2, region2Size);
+                        
+                        // Start playback
+                        secondaryBuffer->Play(0, 0, DSBPLAY_LOOPING);
+                        
+                        g_soundBufferInitialized = true;
+                        printf("[DEBUG] Beat pattern written to sound buffer and playback started\n");
+                    }
+                    else
+                    {
+                        printf("[WARNING] Failed to lock sound buffer\n");
+                    }
+                }
 
                 RenderShit(&g_backBuffer, xOffset, yOffset);
 
