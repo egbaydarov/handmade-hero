@@ -20,12 +20,12 @@ mkdir -p -- "$BUILD_DIR"
   echo "== compile (bear, verbose) =="
 
   bear --append -- \
-    ${CLANG:-x86_64-w64-mingw32-clang} ../src/main.c \
+    ${CLANG:-x86_64-w64-mingw32-clang} ../src/win32_handmade.c \
       "${CFLAGS[@]}" \
       -ftime-report \
       -fuse-ld=lld \
-      -Wl,--pdb=main.pdb \
-      -o main.exe \
+      -Wl,--pdb=win32_handmade.pdb \
+      -o win32_handmade.exe \
       -luser32 \
       -lgdi32
 )
