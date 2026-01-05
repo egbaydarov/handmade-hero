@@ -41,7 +41,7 @@ GLOBAL_VARIABLE int yOffset = 0;
 GLOBAL_VARIABLE bool g_running;
 GLOBAL_VARIABLE win32_offscreen_buffer g_backBuffer;
 GLOBAL_VARIABLE char g_pressedLetter = 0;
-GLOBAL_VARIABLE IDirectSoundBuffer *secondaryBuffer;
+GLOBAL_VARIABLE IDirectSoundBuffer *g_secondaryBuffer;
 GLOBAL_VARIABLE bool g_soundBufferInitialized = false;
 
 typedef DWORD WINAPI
@@ -115,7 +115,7 @@ Win32LoadDSound(
                         secondaryBufferDesc.dwBufferBytes = bufferSize;
                         secondaryBufferDesc.lpwfxFormat = &waveFormat;
 
-                        if (SUCCEEDED(directSound->CreateSoundBuffer(&secondaryBufferDesc, &secondaryBuffer, 0)))
+                        if (SUCCEEDED(directSound->CreateSoundBuffer(&secondaryBufferDesc, &g_secondaryBuffer, 0)))
                         {
                             printf("[DEBUG] directsound secondary buffer created\n");
                         }
@@ -839,7 +839,7 @@ WinMain(
                 // XInputSetState(0, &vibr);
 
                 // Lock and write square wave to sound buffer (once)
-                if (secondaryBuffer && !g_soundBufferInitialized)
+                if (g_secondaryBuffer && !g_soundBufferInitialized)
                 {
                     void *region1 = 0;
                     void *region2 = 0;
@@ -847,7 +847,7 @@ WinMain(
                     DWORD region2Size = 0;
 
                     DWORD bufferSize = 48000 * sizeof(u16) * 2; // 1 second of audio
-                    HRESULT lockResult = secondaryBuffer->Lock(
+                    HRESULT lockResult = g_secondaryBuffer->Lock(
                         0,            // dwOffset
                         bufferSize,   // dwBytes
                         &region1,     // ppvAudioPtr1
@@ -999,10 +999,10 @@ WinMain(
                             }
                         }
 
-                        secondaryBuffer->Unlock(region1, region1Size, region2, region2Size);
+                        g_secondaryBuffer->Unlock(region1, region1Size, region2, region2Size);
 
                         // Start playback
-                        secondaryBuffer->Play(0, 0, DSBPLAY_LOOPING);
+                        g_secondaryBuffer->Play(0, 0, DSBPLAY_LOOPING);
 
                         g_soundBufferInitialized = true;
                         printf("[DEBUG] Beat pattern written to sound buffer and playback started\n");
