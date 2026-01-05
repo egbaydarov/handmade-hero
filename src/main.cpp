@@ -33,6 +33,7 @@ GLOBAL_VARIABLE int xOffset = 0;
 GLOBAL_VARIABLE int yOffset = 0;
 GLOBAL_VARIABLE bool g_running;
 GLOBAL_VARIABLE win32_offscreen_buffer g_backBuffer;
+GLOBAL_VARIABLE char g_pressedLetter = 0;
 
 typedef DWORD WINAPI
 x_input_set_state(DWORD, XINPUT_VIBRATION *);
@@ -43,7 +44,7 @@ x_input_get_state(DWORD, XINPUT_STATE *);
 typedef X_INPUT_GET_STATE(x_input_get_state);
 X_INPUT_GET_STATE(XInputGetStateStub)
 {
-    return 0;
+    return (ERROR_DEVICE_NOT_CONNECTED);
 }
 GLOBAL_VARIABLE x_input_get_state *XInputGetState_ = XInputGetStateStub;
 #define XInputGetState XInputGetState_
@@ -52,7 +53,7 @@ GLOBAL_VARIABLE x_input_get_state *XInputGetState_ = XInputGetStateStub;
 typedef X_INPUT_SET_STATE(x_input_set_state);
 X_INPUT_SET_STATE(XInputSetStateStub)
 {
-    return 0;
+    return (ERROR_DEVICE_NOT_CONNECTED);
 }
 GLOBAL_VARIABLE x_input_set_state *XInputSetState_ = XInputSetStateStub;
 #define XInputSetState XInputSetState_
@@ -98,6 +99,350 @@ Win32GetWindowDimension(
 }
 
 INTERNAL void
+ShitLetterRender(
+    win32_offscreen_buffer *buffer,
+    char letter,
+    int centerX,
+    int centerY,
+    int size)
+{
+    if (letter == 0)
+        return;
+
+    // Convert to uppercase for rendering
+    char renderLetter = letter;
+    if (renderLetter >= 'a' && renderLetter <= 'z')
+    {
+        renderLetter = renderLetter - 'a' + 'A';
+    }
+
+    int halfSize = size / 2;
+    int startX = centerX - halfSize;
+    int startY = centerY - halfSize;
+    int endX = centerX + halfSize;
+    int endY = centerY + halfSize;
+
+    int pitch = buffer->bitmapWidth * buffer->bytesPerPixel;
+    u8 *baseRow = (u8 *)buffer->bitmapMemory;
+
+    // Simple 8x8 bitmap font pattern for each letter
+    // Each letter is represented as 8 rows of 8 bits
+    u8 letterPattern[8] = {0};
+
+    // Define simple patterns for letters A-Z
+    switch (renderLetter)
+    {
+    case 'A':
+        letterPattern[0] = 0x3C;
+        letterPattern[1] = 0x66;
+        letterPattern[2] = 0x66;
+        letterPattern[3] = 0x7E;
+        letterPattern[4] = 0x66;
+        letterPattern[5] = 0x66;
+        letterPattern[6] = 0x66;
+        letterPattern[7] = 0x00;
+        break;
+    case 'B':
+        letterPattern[0] = 0x7C;
+        letterPattern[1] = 0x66;
+        letterPattern[2] = 0x66;
+        letterPattern[3] = 0x7C;
+        letterPattern[4] = 0x66;
+        letterPattern[5] = 0x66;
+        letterPattern[6] = 0x7C;
+        letterPattern[7] = 0x00;
+        break;
+    case 'C':
+        letterPattern[0] = 0x3C;
+        letterPattern[1] = 0x66;
+        letterPattern[2] = 0x60;
+        letterPattern[3] = 0x60;
+        letterPattern[4] = 0x60;
+        letterPattern[5] = 0x66;
+        letterPattern[6] = 0x3C;
+        letterPattern[7] = 0x00;
+        break;
+    case 'D':
+        letterPattern[0] = 0x78;
+        letterPattern[1] = 0x6C;
+        letterPattern[2] = 0x66;
+        letterPattern[3] = 0x66;
+        letterPattern[4] = 0x66;
+        letterPattern[5] = 0x6C;
+        letterPattern[6] = 0x78;
+        letterPattern[7] = 0x00;
+        break;
+    case 'E':
+        letterPattern[0] = 0x7E;
+        letterPattern[1] = 0x60;
+        letterPattern[2] = 0x60;
+        letterPattern[3] = 0x7C;
+        letterPattern[4] = 0x60;
+        letterPattern[5] = 0x60;
+        letterPattern[6] = 0x7E;
+        letterPattern[7] = 0x00;
+        break;
+    case 'F':
+        letterPattern[0] = 0x7E;
+        letterPattern[1] = 0x60;
+        letterPattern[2] = 0x60;
+        letterPattern[3] = 0x7C;
+        letterPattern[4] = 0x60;
+        letterPattern[5] = 0x60;
+        letterPattern[6] = 0x60;
+        letterPattern[7] = 0x00;
+        break;
+    case 'G':
+        letterPattern[0] = 0x3C;
+        letterPattern[1] = 0x66;
+        letterPattern[2] = 0x60;
+        letterPattern[3] = 0x6E;
+        letterPattern[4] = 0x66;
+        letterPattern[5] = 0x66;
+        letterPattern[6] = 0x3C;
+        letterPattern[7] = 0x00;
+        break;
+    case 'H':
+        letterPattern[0] = 0x66;
+        letterPattern[1] = 0x66;
+        letterPattern[2] = 0x66;
+        letterPattern[3] = 0x7E;
+        letterPattern[4] = 0x66;
+        letterPattern[5] = 0x66;
+        letterPattern[6] = 0x66;
+        letterPattern[7] = 0x00;
+        break;
+    case 'I':
+        letterPattern[0] = 0x3C;
+        letterPattern[1] = 0x18;
+        letterPattern[2] = 0x18;
+        letterPattern[3] = 0x18;
+        letterPattern[4] = 0x18;
+        letterPattern[5] = 0x18;
+        letterPattern[6] = 0x3C;
+        letterPattern[7] = 0x00;
+        break;
+    case 'J':
+        letterPattern[0] = 0x1E;
+        letterPattern[1] = 0x0C;
+        letterPattern[2] = 0x0C;
+        letterPattern[3] = 0x0C;
+        letterPattern[4] = 0x6C;
+        letterPattern[5] = 0x6C;
+        letterPattern[6] = 0x38;
+        letterPattern[7] = 0x00;
+        break;
+    case 'K':
+        letterPattern[0] = 0x66;
+        letterPattern[1] = 0x6C;
+        letterPattern[2] = 0x78;
+        letterPattern[3] = 0x70;
+        letterPattern[4] = 0x78;
+        letterPattern[5] = 0x6C;
+        letterPattern[6] = 0x66;
+        letterPattern[7] = 0x00;
+        break;
+    case 'L':
+        letterPattern[0] = 0x60;
+        letterPattern[1] = 0x60;
+        letterPattern[2] = 0x60;
+        letterPattern[3] = 0x60;
+        letterPattern[4] = 0x60;
+        letterPattern[5] = 0x60;
+        letterPattern[6] = 0x7E;
+        letterPattern[7] = 0x00;
+        break;
+    case 'M':
+        letterPattern[0] = 0x63;
+        letterPattern[1] = 0x77;
+        letterPattern[2] = 0x7F;
+        letterPattern[3] = 0x6B;
+        letterPattern[4] = 0x63;
+        letterPattern[5] = 0x63;
+        letterPattern[6] = 0x63;
+        letterPattern[7] = 0x00;
+        break;
+    case 'N':
+        letterPattern[0] = 0x66;
+        letterPattern[1] = 0x76;
+        letterPattern[2] = 0x7E;
+        letterPattern[3] = 0x7E;
+        letterPattern[4] = 0x6E;
+        letterPattern[5] = 0x66;
+        letterPattern[6] = 0x66;
+        letterPattern[7] = 0x00;
+        break;
+    case 'O':
+        letterPattern[0] = 0x3C;
+        letterPattern[1] = 0x66;
+        letterPattern[2] = 0x66;
+        letterPattern[3] = 0x66;
+        letterPattern[4] = 0x66;
+        letterPattern[5] = 0x66;
+        letterPattern[6] = 0x3C;
+        letterPattern[7] = 0x00;
+        break;
+    case 'P':
+        letterPattern[0] = 0x7C;
+        letterPattern[1] = 0x66;
+        letterPattern[2] = 0x66;
+        letterPattern[3] = 0x7C;
+        letterPattern[4] = 0x60;
+        letterPattern[5] = 0x60;
+        letterPattern[6] = 0x60;
+        letterPattern[7] = 0x00;
+        break;
+    case 'Q':
+        letterPattern[0] = 0x3C;
+        letterPattern[1] = 0x66;
+        letterPattern[2] = 0x66;
+        letterPattern[3] = 0x66;
+        letterPattern[4] = 0x66;
+        letterPattern[5] = 0x6C;
+        letterPattern[6] = 0x3E;
+        letterPattern[7] = 0x00;
+        break;
+    case 'R':
+        letterPattern[0] = 0x7C;
+        letterPattern[1] = 0x66;
+        letterPattern[2] = 0x66;
+        letterPattern[3] = 0x7C;
+        letterPattern[4] = 0x78;
+        letterPattern[5] = 0x6C;
+        letterPattern[6] = 0x66;
+        letterPattern[7] = 0x00;
+        break;
+    case 'S':
+        letterPattern[0] = 0x3C;
+        letterPattern[1] = 0x66;
+        letterPattern[2] = 0x60;
+        letterPattern[3] = 0x3C;
+        letterPattern[4] = 0x06;
+        letterPattern[5] = 0x66;
+        letterPattern[6] = 0x3C;
+        letterPattern[7] = 0x00;
+        break;
+    case 'T':
+        letterPattern[0] = 0x7E;
+        letterPattern[1] = 0x18;
+        letterPattern[2] = 0x18;
+        letterPattern[3] = 0x18;
+        letterPattern[4] = 0x18;
+        letterPattern[5] = 0x18;
+        letterPattern[6] = 0x18;
+        letterPattern[7] = 0x00;
+        break;
+    case 'U':
+        letterPattern[0] = 0x66;
+        letterPattern[1] = 0x66;
+        letterPattern[2] = 0x66;
+        letterPattern[3] = 0x66;
+        letterPattern[4] = 0x66;
+        letterPattern[5] = 0x66;
+        letterPattern[6] = 0x3C;
+        letterPattern[7] = 0x00;
+        break;
+    case 'V':
+        letterPattern[0] = 0x66;
+        letterPattern[1] = 0x66;
+        letterPattern[2] = 0x66;
+        letterPattern[3] = 0x66;
+        letterPattern[4] = 0x66;
+        letterPattern[5] = 0x3C;
+        letterPattern[6] = 0x18;
+        letterPattern[7] = 0x00;
+        break;
+    case 'W':
+        letterPattern[0] = 0x63;
+        letterPattern[1] = 0x63;
+        letterPattern[2] = 0x63;
+        letterPattern[3] = 0x6B;
+        letterPattern[4] = 0x7F;
+        letterPattern[5] = 0x77;
+        letterPattern[6] = 0x63;
+        letterPattern[7] = 0x00;
+        break;
+    case 'X':
+        letterPattern[0] = 0x66;
+        letterPattern[1] = 0x66;
+        letterPattern[2] = 0x3C;
+        letterPattern[3] = 0x18;
+        letterPattern[4] = 0x3C;
+        letterPattern[5] = 0x66;
+        letterPattern[6] = 0x66;
+        letterPattern[7] = 0x00;
+        break;
+    case 'Y':
+        letterPattern[0] = 0x66;
+        letterPattern[1] = 0x66;
+        letterPattern[2] = 0x66;
+        letterPattern[3] = 0x3C;
+        letterPattern[4] = 0x18;
+        letterPattern[5] = 0x18;
+        letterPattern[6] = 0x18;
+        letterPattern[7] = 0x00;
+        break;
+    case 'Z':
+        letterPattern[0] = 0x7E;
+        letterPattern[1] = 0x06;
+        letterPattern[2] = 0x0C;
+        letterPattern[3] = 0x18;
+        letterPattern[4] = 0x30;
+        letterPattern[5] = 0x60;
+        letterPattern[6] = 0x7E;
+        letterPattern[7] = 0x00;
+        break;
+    default:
+        // Draw a box for unknown characters
+        for (int i = 0; i < 8; i++)
+        {
+            letterPattern[i] = (i == 0 || i == 7) ? 0xFF : 0x81;
+        }
+        break;
+    }
+
+    // Render the letter pattern scaled to size
+    // Note: Windows bitmaps are bottom-up, so we need to invert Y
+    for (int y = startY; y < endY && y < buffer->bitmapHeight; ++y)
+    {
+        if (y < 0)
+            continue;
+
+        u32 *pixel = (u32 *)(baseRow + y * pitch) + startX;
+
+        for (int x = startX; x < endX && x < buffer->bitmapWidth; ++x)
+        {
+            if (x < 0)
+            {
+                pixel++;
+                continue;
+            }
+
+            // Map to 8x8 pattern
+            // In bottom-up bitmap: y=0 is bottom of screen, y=height-1 is top
+            // So we iterate from bottom to top, and need to invert pattern Y
+            int localX = x - startX;
+            int localY = y - startY;
+            int patternX = (localX * 8) / size;
+            int patternY = 7 - ((localY * 8) / size);
+
+            if (patternX >= 0 && patternX < 8 && patternY >= 0 && patternY < 8)
+            {
+                u8 patternRow = letterPattern[patternY];
+                bool bitSet = (patternRow >> (7 - patternX)) & 1;
+
+                if (bitSet)
+                {
+                    *pixel = (255 << 24) | (255 << 16) | (255 << 8) | 255; // White
+                }
+            }
+
+            pixel++;
+        }
+    }
+}
+
+INTERNAL void
 RenderShit(
     win32_offscreen_buffer *buffer,
     int xOffset,
@@ -125,6 +470,14 @@ RenderShit(
         }
 
         row += pitch;
+    }
+
+    // Render pressed letter in the center at 256x256
+    if (g_pressedLetter != 0)
+    {
+        int centerX = buffer->bitmapWidth / 2;
+        int centerY = buffer->bitmapHeight / 2;
+        ShitLetterRender(buffer, g_pressedLetter, centerX, centerY, 256);
     }
 }
 
@@ -211,53 +564,43 @@ Win32MainWindowCallback(
         bool wasDown = ((lParam & (1 << 30)) != 0);
         bool isDown = ((lParam & (1 << 31)) == 0);
 
-        if (vkcode == 'W')
+        if (isDown && !wasDown)
         {
-            printf("w");
+            // Track letter keys
+            if ((vkcode >= 'A' && vkcode <= 'Z') || (vkcode >= 'a' && vkcode <= 'z'))
+            {
+                g_pressedLetter = (char)vkcode;
+            }
         }
-        else if (vkcode == 'S')
+        else if (!isDown && wasDown)
         {
-            printf("w");
+            // Clear letter when key is released
+            if ((vkcode >= 'A' && vkcode <= 'Z') || (vkcode >= 'a' && vkcode <= 'z'))
+            {
+                if (g_pressedLetter == (char)vkcode)
+                {
+                    g_pressedLetter = 0;
+                }
+            }
         }
-        else if (vkcode == 'A')
+
+        switch (vkcode)
         {
-            printf("w");
-        }
-        else if (vkcode == 'D')
-        {
-            printf("w");
-        }
-        else if (vkcode == 'Q')
-        {
-            printf("w");
-        }
-        else if (vkcode == 'E')
-        {
-            printf("w");
-        }
-        else if (vkcode == VK_DOWN)
-        {
-            printf("w");
-        }
-        else if (vkcode == VK_UP)
-        {
-            printf("w");
-        }
-        else if (vkcode == VK_LEFT)
-        {
-            printf("w");
-        }
-        else if (vkcode == VK_RIGHT)
-        {
-            printf("w");
-        }
-        else if (vkcode == VK_SPACE)
-        {
-            printf("w");
-        }
-        else if (vkcode == VK_ESCAPE)
-        {
-            printf("w");
+        case 'Q':
+        case VK_ESCAPE:
+            g_running = false;
+        case 'W':
+        case 'S':
+        case 'A':
+        case 'D':
+        case 'E':
+        case VK_DOWN:
+        case VK_UP:
+        case VK_LEFT:
+        case VK_RIGHT:
+        case VK_SPACE:
+        default:
+            break;
         }
     }
     break;
@@ -289,9 +632,6 @@ Win32MainWindowCallback(
 
         BOOL endPaintOk = EndPaint(window, &paint);
         (void)endPaintOk;
-        ++xOffset;
-        ++xOffset;
-        --yOffset;
     }
     break;
 
@@ -391,22 +731,8 @@ WinMain(
                         SHORT stickRX = gamepad->sThumbRX;
                         SHORT stickRY = gamepad->sThumbRY;
 
-                        if (b)
-                        {
-                            xOffset += 10;
-                        }
-                        if (a)
-                        {
-                            yOffset -= 10;
-                        }
-                        if (y)
-                        {
-                            yOffset += 10;
-                        }
-                        if (x)
-                        {
-                            xOffset -= 10;
-                        }
+                        xOffset += stickRX >> 11;
+                        yOffset += stickRY >> 11;
                     }
                     else
                     {
