@@ -1,25 +1,27 @@
 #include <dsound.h>
-#include <libloaderapi.h>
 #include <math.h>
-#include <minwinbase.h>
-#include <mmeapi.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <windows.h>
-#include <winerror.h>
-#include <winnt.h>
 #include <xinput.h>
 
 #define GLOBAL_VARIABLE static
 #define LOCAL_PERSIST   static
 #define INTERNAL        static
 
+typedef int32_t b32;
 typedef uint8_t u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
+
+typedef int8_t s8;
 typedef int16_t s16;
+typedef int32_t s32;
+typedef int64_t s64;
+
 typedef float f32;
+typedef double f64;
 
 struct win32_offscreen_buffer
 {
@@ -36,13 +38,24 @@ struct win32_window_dimension
     int height;
 };
 
-GLOBAL_VARIABLE int xOffset = 0;
-GLOBAL_VARIABLE int yOffset = 0;
-GLOBAL_VARIABLE bool g_running;
+struct win32_sound_output
+{
+    u16 samplesPerSec = 48000;
+    u16 toneHz = 256;
+    f32 tSine = 0;
+
+    u16 volume = 1000;
+    s16 lrBalance = 0;
+    u16 bytesPerSample = sizeof(u16) * 2;
+    u16 secondaryBufferSize = samplesPerSec * bytesPerSample;
+
+    u32 runningSampleIndex;
+    u32 latencySampleCount;
+};
+
+GLOBAL_VARIABLE b32 g_running;
 GLOBAL_VARIABLE win32_offscreen_buffer g_backBuffer;
-GLOBAL_VARIABLE char g_pressedLetter = 0;
 GLOBAL_VARIABLE IDirectSoundBuffer *g_secondaryBuffer;
-GLOBAL_VARIABLE bool g_soundBufferInitialized = false;
 
 typedef DWORD WINAPI
 x_input_set_state(DWORD, XINPUT_VIBRATION *);
@@ -71,9 +84,9 @@ GLOBAL_VARIABLE x_input_set_state *XInputSetState_ = XInputSetStateStub;
 typedef DIRECT_SOUND_CREATE(direct_sound_create);
 
 INTERNAL void
-Win32LoadDSound(
+Win32LoadDirectSound(
     HWND window,
-    u32 samplePerSec,
+    u32 samplesPerSec,
     u32 bufferSize)
 {
     HMODULE dSoundLib = LoadLibraryA("dsound.dll");
@@ -90,15 +103,15 @@ Win32LoadDSound(
             WAVEFORMATEX waveFormat;
             waveFormat.wFormatTag = WAVE_FORMAT_PCM;
             waveFormat.nChannels = 2;
-            waveFormat.nSamplesPerSec = samplePerSec;
+            waveFormat.nSamplesPerSec = samplesPerSec;
             waveFormat.wBitsPerSample = 16;
             waveFormat.nBlockAlign = (waveFormat.nChannels * waveFormat.wBitsPerSample) / 8;
             waveFormat.nAvgBytesPerSec = waveFormat.nSamplesPerSec * waveFormat.nBlockAlign;
             waveFormat.cbSize = 0;
-            printf("[DEBUG] directsound dll loaded\n");
+            printf("[DEBUG dll loaded\n");
             if (SUCCEEDED(directSound->SetCooperativeLevel(window, DSSCL_PRIORITY)))
             {
-                printf("[DEBUG] directsound set level ok\n");
+                printf("[DEBUG] dsound set level ok\n");
                 DSBUFFERDESC bufferDesc = {};
                 bufferDesc.dwSize = sizeof(bufferDesc);
                 bufferDesc.dwFlags = DSBCAPS_PRIMARYBUFFER;
@@ -106,10 +119,10 @@ Win32LoadDSound(
                 IDirectSoundBuffer *primaryBuffer;
                 if (SUCCEEDED(directSound->CreateSoundBuffer(&bufferDesc, &primaryBuffer, 0)))
                 {
-                    printf("[DEBUG] directsound primary buffer created\n");
+                    printf("[DEBUG] dsound primary buffer created\n");
                     if (SUCCEEDED(primaryBuffer->SetFormat(&waveFormat)))
                     {
-                        printf("[DEBUG] directsound primary buffer format set\n");
+                        printf("[DEBUG] dsound primary buffer format set\n");
                         DSBUFFERDESC secondaryBufferDesc = {};
                         secondaryBufferDesc.dwSize = sizeof(secondaryBufferDesc);
                         secondaryBufferDesc.dwBufferBytes = bufferSize;
@@ -117,36 +130,36 @@ Win32LoadDSound(
 
                         if (SUCCEEDED(directSound->CreateSoundBuffer(&secondaryBufferDesc, &g_secondaryBuffer, 0)))
                         {
-                            printf("[DEBUG] directsound secondary buffer created\n");
+                            printf("[DEBUG] dsound secondary buffer created\n");
                         }
                         else
                         {
-                            printf("[WARNING] directsound create sb failed\n");
+                            printf("[WARNING] dsound create sb failed\n");
                         }
                     }
                     else
                     {
-                        printf("[WARNING] directsound set pb format failed\n");
+                        printf("[WARNING] dsound set pb format failed\n");
                     }
                 }
                 else
                 {
-                    printf("[WARNING] directsound create pb failed\n");
+                    printf("[WARNING] dsound create pb failed\n");
                 }
             }
             else
             {
-                printf("[WARNING] directsound set level failed\n");
+                printf("[WARNING] dsound set level failed\n");
             }
         }
         else
         {
-            printf("[WARNING] directsound dll load failed\n");
+            printf("[WARNING] dsound dll load failed\n");
         }
     }
     else
     {
-        printf("[WARNING] directsound dll not found\n");
+        printf("[WARNING] dsound dll not found\n");
     }
 }
 
@@ -191,350 +204,6 @@ Win32GetWindowDimension(
 }
 
 INTERNAL void
-ShitLetterRender(
-    win32_offscreen_buffer *buffer,
-    char letter,
-    int centerX,
-    int centerY,
-    int size)
-{
-    if (letter == 0)
-        return;
-
-    // Convert to uppercase for rendering
-    char renderLetter = letter;
-    if (renderLetter >= 'a' && renderLetter <= 'z')
-    {
-        renderLetter = renderLetter - 'a' + 'A';
-    }
-
-    int halfSize = size / 2;
-    int startX = centerX - halfSize;
-    int startY = centerY - halfSize;
-    int endX = centerX + halfSize;
-    int endY = centerY + halfSize;
-
-    int pitch = buffer->bitmapWidth * buffer->bytesPerPixel;
-    u8 *baseRow = (u8 *)buffer->bitmapMemory;
-
-    // Simple 8x8 bitmap font pattern for each letter
-    // Each letter is represented as 8 rows of 8 bits
-    u8 letterPattern[8] = {0};
-
-    // Define simple patterns for letters A-Z
-    switch (renderLetter)
-    {
-    case 'A':
-        letterPattern[0] = 0x3C;
-        letterPattern[1] = 0x66;
-        letterPattern[2] = 0x66;
-        letterPattern[3] = 0x7E;
-        letterPattern[4] = 0x66;
-        letterPattern[5] = 0x66;
-        letterPattern[6] = 0x66;
-        letterPattern[7] = 0x00;
-        break;
-    case 'B':
-        letterPattern[0] = 0x7C;
-        letterPattern[1] = 0x66;
-        letterPattern[2] = 0x66;
-        letterPattern[3] = 0x7C;
-        letterPattern[4] = 0x66;
-        letterPattern[5] = 0x66;
-        letterPattern[6] = 0x7C;
-        letterPattern[7] = 0x00;
-        break;
-    case 'C':
-        letterPattern[0] = 0x3C;
-        letterPattern[1] = 0x66;
-        letterPattern[2] = 0x60;
-        letterPattern[3] = 0x60;
-        letterPattern[4] = 0x60;
-        letterPattern[5] = 0x66;
-        letterPattern[6] = 0x3C;
-        letterPattern[7] = 0x00;
-        break;
-    case 'D':
-        letterPattern[0] = 0x78;
-        letterPattern[1] = 0x6C;
-        letterPattern[2] = 0x66;
-        letterPattern[3] = 0x66;
-        letterPattern[4] = 0x66;
-        letterPattern[5] = 0x6C;
-        letterPattern[6] = 0x78;
-        letterPattern[7] = 0x00;
-        break;
-    case 'E':
-        letterPattern[0] = 0x7E;
-        letterPattern[1] = 0x60;
-        letterPattern[2] = 0x60;
-        letterPattern[3] = 0x7C;
-        letterPattern[4] = 0x60;
-        letterPattern[5] = 0x60;
-        letterPattern[6] = 0x7E;
-        letterPattern[7] = 0x00;
-        break;
-    case 'F':
-        letterPattern[0] = 0x7E;
-        letterPattern[1] = 0x60;
-        letterPattern[2] = 0x60;
-        letterPattern[3] = 0x7C;
-        letterPattern[4] = 0x60;
-        letterPattern[5] = 0x60;
-        letterPattern[6] = 0x60;
-        letterPattern[7] = 0x00;
-        break;
-    case 'G':
-        letterPattern[0] = 0x3C;
-        letterPattern[1] = 0x66;
-        letterPattern[2] = 0x60;
-        letterPattern[3] = 0x6E;
-        letterPattern[4] = 0x66;
-        letterPattern[5] = 0x66;
-        letterPattern[6] = 0x3C;
-        letterPattern[7] = 0x00;
-        break;
-    case 'H':
-        letterPattern[0] = 0x66;
-        letterPattern[1] = 0x66;
-        letterPattern[2] = 0x66;
-        letterPattern[3] = 0x7E;
-        letterPattern[4] = 0x66;
-        letterPattern[5] = 0x66;
-        letterPattern[6] = 0x66;
-        letterPattern[7] = 0x00;
-        break;
-    case 'I':
-        letterPattern[0] = 0x3C;
-        letterPattern[1] = 0x18;
-        letterPattern[2] = 0x18;
-        letterPattern[3] = 0x18;
-        letterPattern[4] = 0x18;
-        letterPattern[5] = 0x18;
-        letterPattern[6] = 0x3C;
-        letterPattern[7] = 0x00;
-        break;
-    case 'J':
-        letterPattern[0] = 0x1E;
-        letterPattern[1] = 0x0C;
-        letterPattern[2] = 0x0C;
-        letterPattern[3] = 0x0C;
-        letterPattern[4] = 0x6C;
-        letterPattern[5] = 0x6C;
-        letterPattern[6] = 0x38;
-        letterPattern[7] = 0x00;
-        break;
-    case 'K':
-        letterPattern[0] = 0x66;
-        letterPattern[1] = 0x6C;
-        letterPattern[2] = 0x78;
-        letterPattern[3] = 0x70;
-        letterPattern[4] = 0x78;
-        letterPattern[5] = 0x6C;
-        letterPattern[6] = 0x66;
-        letterPattern[7] = 0x00;
-        break;
-    case 'L':
-        letterPattern[0] = 0x60;
-        letterPattern[1] = 0x60;
-        letterPattern[2] = 0x60;
-        letterPattern[3] = 0x60;
-        letterPattern[4] = 0x60;
-        letterPattern[5] = 0x60;
-        letterPattern[6] = 0x7E;
-        letterPattern[7] = 0x00;
-        break;
-    case 'M':
-        letterPattern[0] = 0x63;
-        letterPattern[1] = 0x77;
-        letterPattern[2] = 0x7F;
-        letterPattern[3] = 0x6B;
-        letterPattern[4] = 0x63;
-        letterPattern[5] = 0x63;
-        letterPattern[6] = 0x63;
-        letterPattern[7] = 0x00;
-        break;
-    case 'N':
-        letterPattern[0] = 0x66;
-        letterPattern[1] = 0x76;
-        letterPattern[2] = 0x7E;
-        letterPattern[3] = 0x7E;
-        letterPattern[4] = 0x6E;
-        letterPattern[5] = 0x66;
-        letterPattern[6] = 0x66;
-        letterPattern[7] = 0x00;
-        break;
-    case 'O':
-        letterPattern[0] = 0x3C;
-        letterPattern[1] = 0x66;
-        letterPattern[2] = 0x66;
-        letterPattern[3] = 0x66;
-        letterPattern[4] = 0x66;
-        letterPattern[5] = 0x66;
-        letterPattern[6] = 0x3C;
-        letterPattern[7] = 0x00;
-        break;
-    case 'P':
-        letterPattern[0] = 0x7C;
-        letterPattern[1] = 0x66;
-        letterPattern[2] = 0x66;
-        letterPattern[3] = 0x7C;
-        letterPattern[4] = 0x60;
-        letterPattern[5] = 0x60;
-        letterPattern[6] = 0x60;
-        letterPattern[7] = 0x00;
-        break;
-    case 'Q':
-        letterPattern[0] = 0x3C;
-        letterPattern[1] = 0x66;
-        letterPattern[2] = 0x66;
-        letterPattern[3] = 0x66;
-        letterPattern[4] = 0x66;
-        letterPattern[5] = 0x6C;
-        letterPattern[6] = 0x3E;
-        letterPattern[7] = 0x00;
-        break;
-    case 'R':
-        letterPattern[0] = 0x7C;
-        letterPattern[1] = 0x66;
-        letterPattern[2] = 0x66;
-        letterPattern[3] = 0x7C;
-        letterPattern[4] = 0x78;
-        letterPattern[5] = 0x6C;
-        letterPattern[6] = 0x66;
-        letterPattern[7] = 0x00;
-        break;
-    case 'S':
-        letterPattern[0] = 0x3C;
-        letterPattern[1] = 0x66;
-        letterPattern[2] = 0x60;
-        letterPattern[3] = 0x3C;
-        letterPattern[4] = 0x06;
-        letterPattern[5] = 0x66;
-        letterPattern[6] = 0x3C;
-        letterPattern[7] = 0x00;
-        break;
-    case 'T':
-        letterPattern[0] = 0x7E;
-        letterPattern[1] = 0x18;
-        letterPattern[2] = 0x18;
-        letterPattern[3] = 0x18;
-        letterPattern[4] = 0x18;
-        letterPattern[5] = 0x18;
-        letterPattern[6] = 0x18;
-        letterPattern[7] = 0x00;
-        break;
-    case 'U':
-        letterPattern[0] = 0x66;
-        letterPattern[1] = 0x66;
-        letterPattern[2] = 0x66;
-        letterPattern[3] = 0x66;
-        letterPattern[4] = 0x66;
-        letterPattern[5] = 0x66;
-        letterPattern[6] = 0x3C;
-        letterPattern[7] = 0x00;
-        break;
-    case 'V':
-        letterPattern[0] = 0x66;
-        letterPattern[1] = 0x66;
-        letterPattern[2] = 0x66;
-        letterPattern[3] = 0x66;
-        letterPattern[4] = 0x66;
-        letterPattern[5] = 0x3C;
-        letterPattern[6] = 0x18;
-        letterPattern[7] = 0x00;
-        break;
-    case 'W':
-        letterPattern[0] = 0x63;
-        letterPattern[1] = 0x63;
-        letterPattern[2] = 0x63;
-        letterPattern[3] = 0x6B;
-        letterPattern[4] = 0x7F;
-        letterPattern[5] = 0x77;
-        letterPattern[6] = 0x63;
-        letterPattern[7] = 0x00;
-        break;
-    case 'X':
-        letterPattern[0] = 0x66;
-        letterPattern[1] = 0x66;
-        letterPattern[2] = 0x3C;
-        letterPattern[3] = 0x18;
-        letterPattern[4] = 0x3C;
-        letterPattern[5] = 0x66;
-        letterPattern[6] = 0x66;
-        letterPattern[7] = 0x00;
-        break;
-    case 'Y':
-        letterPattern[0] = 0x66;
-        letterPattern[1] = 0x66;
-        letterPattern[2] = 0x66;
-        letterPattern[3] = 0x3C;
-        letterPattern[4] = 0x18;
-        letterPattern[5] = 0x18;
-        letterPattern[6] = 0x18;
-        letterPattern[7] = 0x00;
-        break;
-    case 'Z':
-        letterPattern[0] = 0x7E;
-        letterPattern[1] = 0x06;
-        letterPattern[2] = 0x0C;
-        letterPattern[3] = 0x18;
-        letterPattern[4] = 0x30;
-        letterPattern[5] = 0x60;
-        letterPattern[6] = 0x7E;
-        letterPattern[7] = 0x00;
-        break;
-    default:
-        // Draw a box for unknown characters
-        for (int i = 0; i < 8; i++)
-        {
-            letterPattern[i] = (i == 0 || i == 7) ? 0xFF : 0x81;
-        }
-        break;
-    }
-
-    // Render the letter pattern scaled to size
-    // Note: Windows bitmaps are bottom-up, so we need to invert Y
-    for (int y = startY; y < endY && y < buffer->bitmapHeight; ++y)
-    {
-        if (y < 0)
-            continue;
-
-        u32 *pixel = (u32 *)(baseRow + y * pitch) + startX;
-
-        for (int x = startX; x < endX && x < buffer->bitmapWidth; ++x)
-        {
-            if (x < 0)
-            {
-                pixel++;
-                continue;
-            }
-
-            // Map to 8x8 pattern
-            // In bottom-up bitmap: y=0 is bottom of screen, y=height-1 is top
-            // So we iterate from bottom to top, and need to invert pattern Y
-            int localX = x - startX;
-            int localY = y - startY;
-            int patternX = (localX * 8) / size;
-            int patternY = 7 - ((localY * 8) / size);
-
-            if (patternX >= 0 && patternX < 8 && patternY >= 0 && patternY < 8)
-            {
-                u8 patternRow = letterPattern[patternY];
-                bool bitSet = (patternRow >> (7 - patternX)) & 1;
-
-                if (bitSet)
-                {
-                    *pixel = (255 << 24) | (255 << 16) | (255 << 8) | 255; // White
-                }
-            }
-
-            pixel++;
-        }
-    }
-}
-
-INTERNAL void
 RenderShit(
     win32_offscreen_buffer *buffer,
     int xOffset,
@@ -562,14 +231,6 @@ RenderShit(
         }
 
         row += pitch;
-    }
-
-    // Render pressed letter in the center at 256x256
-    if (g_pressedLetter != 0)
-    {
-        int centerX = buffer->bitmapWidth / 2;
-        int centerY = buffer->bitmapHeight / 2;
-        ShitLetterRender(buffer, g_pressedLetter, centerX, centerY, 256);
     }
 }
 
@@ -653,27 +314,16 @@ Win32MainWindowCallback(
     case WM_KEYDOWN:
     {
         u32 vkcode = wParam;
-        bool wasDown = ((lParam & (1 << 30)) != 0);
-        bool isDown = ((lParam & (1 << 31)) == 0);
+        b32 wasDown = ((lParam & (1 << 30)) != 0);
+        b32 isDown = ((lParam & (1 << 31)) == 0);
 
         if (isDown && !wasDown)
         {
             // Track letter keys
-            if ((vkcode >= 'A' && vkcode <= 'Z') || (vkcode >= 'a' && vkcode <= 'z'))
-            {
-                g_pressedLetter = (char)vkcode;
-            }
         }
         else if (!isDown && wasDown)
         {
             // Clear letter when key is released
-            if ((vkcode >= 'A' && vkcode <= 'Z') || (vkcode >= 'a' && vkcode <= 'z'))
-            {
-                if (g_pressedLetter == (char)vkcode)
-                {
-                    g_pressedLetter = 0;
-                }
-            }
         }
 
         switch (vkcode)
@@ -729,12 +379,62 @@ Win32MainWindowCallback(
 
     default:
     {
-        result = DefWindowProc(window, message, wParam, lParam);
+        result = DefWindowProcA(window, message, wParam, lParam);
     }
     break;
     }
 
     return result;
+}
+
+INTERNAL VOID
+Win32FillSoundBuffer(
+    win32_sound_output *soundOutput,
+    DWORD byteToLock,
+    DWORD bytesToWrite)
+{
+    void *region1 = 0;
+    void *region2 = 0;
+    DWORD region1Size = 0;
+    DWORD region2Size = 0;
+
+    HRESULT lockResult = g_secondaryBuffer->Lock(
+        byteToLock,
+        bytesToWrite,
+        &region1,
+        &region1Size,
+        &region2,
+        &region2Size,
+        0);
+
+    if (SUCCEEDED(lockResult))
+    {
+        s16 *out = (s16 *)region1;
+        DWORD samples = region1Size / (sizeof(s16) * 2);
+        for (DWORD i = 0; i < samples; ++i)
+        {
+            f32 sine = sinf(soundOutput->tSine);
+            *out++ = (s16)(sine * (soundOutput->volume - soundOutput->lrBalance));
+            *out++ = (s16)(sine * (soundOutput->volume + soundOutput->lrBalance));
+            soundOutput->tSine += (2.0 * M_PI) * (f32)1.0f / ((f32)soundOutput->samplesPerSec / soundOutput->toneHz);
+            ++soundOutput->runningSampleIndex;
+        }
+        out = (s16 *)region2;
+        samples = region2Size / (sizeof(s16) * 2);
+        for (DWORD i = 0; i < samples; ++i)
+        {
+            f32 sine = sinf(soundOutput->tSine);
+            *out++ = (s16)(sine * (soundOutput->volume - soundOutput->lrBalance));
+            *out++ = (s16)(sine * (soundOutput->volume + soundOutput->lrBalance));
+            soundOutput->tSine += (2.0 * M_PI) * (f32)1.0f / ((f32)soundOutput->samplesPerSec / soundOutput->toneHz);
+            ++soundOutput->runningSampleIndex;
+        }
+        g_secondaryBuffer->Unlock(region1, region1Size, region2, region2Size);
+    }
+    else
+    {
+        printf("[WARNING] Failed to lock sound buffer\n");
+    }
 }
 
 int WINAPI
@@ -775,7 +475,25 @@ WinMain(
 
         if (window)
         {
-            Win32LoadDSound(window, 48000, 48000 * sizeof(u16) * 2);
+            int xOffset = 0;
+            int yOffset = 0;
+
+            win32_sound_output soundOutput = {};
+            soundOutput.samplesPerSec = 48000;
+            soundOutput.toneHz = 512;
+            soundOutput.tSine = 0;
+            soundOutput.volume = 1000;
+            soundOutput.bytesPerSample = sizeof(u16) * 2;
+            soundOutput.secondaryBufferSize = soundOutput.samplesPerSec * soundOutput.bytesPerSample;
+            soundOutput.latencySampleCount = soundOutput.samplesPerSec / 20;
+
+            Win32LoadDirectSound(
+                window,
+                soundOutput.samplesPerSec,
+                soundOutput.secondaryBufferSize);
+
+            Win32FillSoundBuffer(&soundOutput, 0, soundOutput.latencySampleCount * soundOutput.bytesPerSample);
+            g_secondaryBuffer->Play(0, 0, DSBPLAY_LOOPING);
 
             // NOTE(byda): depends on window creation flag (should I create a
             // hdc each iteration or not)
@@ -800,216 +518,77 @@ WinMain(
                 for (DWORD i = 0; i < XUSER_MAX_COUNT; ++i)
                 {
                     XINPUT_STATE state;
-                    DWORD xinputRes = XInputGetState(i, &state);
 
-                    if (xinputRes == ERROR_SUCCESS)
+                    if (SUCCEEDED(XInputGetState(i, &state)))
                     {
                         XINPUT_GAMEPAD *gamepad = &state.Gamepad;
 
-                        bool dpadUp = gamepad->wButtons & XINPUT_GAMEPAD_DPAD_UP;
-                        bool dpadDown = gamepad->wButtons & XINPUT_GAMEPAD_DPAD_DOWN;
-                        bool dpadLeft = gamepad->wButtons & XINPUT_GAMEPAD_DPAD_LEFT;
-                        bool dpadRight = gamepad->wButtons & XINPUT_GAMEPAD_DPAD_RIGHT;
-                        bool start = gamepad->wButtons & XINPUT_GAMEPAD_START;
-                        bool back = gamepad->wButtons & XINPUT_GAMEPAD_BACK;
-                        bool a = gamepad->wButtons & XINPUT_GAMEPAD_A;
-                        bool b = gamepad->wButtons & XINPUT_GAMEPAD_B;
-                        bool x = gamepad->wButtons & XINPUT_GAMEPAD_X;
-                        bool y = gamepad->wButtons & XINPUT_GAMEPAD_Y;
-                        bool lShoulder = gamepad->wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER;
-                        bool rShoulder = gamepad->wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER;
-                        bool lThumb = gamepad->wButtons & XINPUT_GAMEPAD_LEFT_THUMB;
-                        bool rThumb = gamepad->wButtons & XINPUT_GAMEPAD_RIGHT_THUMB;
+                        b32 dpadUp = gamepad->wButtons & XINPUT_GAMEPAD_DPAD_UP;
+                        b32 dpadDown = gamepad->wButtons & XINPUT_GAMEPAD_DPAD_DOWN;
+                        b32 dpadLeft = gamepad->wButtons & XINPUT_GAMEPAD_DPAD_LEFT;
+                        b32 dpadRight = gamepad->wButtons & XINPUT_GAMEPAD_DPAD_RIGHT;
+                        b32 start = gamepad->wButtons & XINPUT_GAMEPAD_START;
+                        b32 back = gamepad->wButtons & XINPUT_GAMEPAD_BACK;
+                        b32 a = gamepad->wButtons & XINPUT_GAMEPAD_A;
+                        b32 b = gamepad->wButtons & XINPUT_GAMEPAD_B;
+                        b32 x = gamepad->wButtons & XINPUT_GAMEPAD_X;
+                        b32 y = gamepad->wButtons & XINPUT_GAMEPAD_Y;
+                        b32 lShoulder = gamepad->wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER;
+                        b32 rShoulder = gamepad->wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER;
+                        b32 lThumb = gamepad->wButtons & XINPUT_GAMEPAD_LEFT_THUMB;
+                        b32 rThumb = gamepad->wButtons & XINPUT_GAMEPAD_RIGHT_THUMB;
                         SHORT stickLX = gamepad->sThumbLX;
                         SHORT stickLY = gamepad->sThumbLY;
                         SHORT stickRX = gamepad->sThumbRX;
                         SHORT stickRY = gamepad->sThumbRY;
 
-                        xOffset += stickRX >> 11;
-                        yOffset += stickRY >> 11;
+                        xOffset += stickRX / 5000;
+                        yOffset += stickRY / 5000;
+
+                        soundOutput.toneHz = 512 + (s32)(256.f * ((f32)stickLY / 32768.0f));
+                        soundOutput.lrBalance = (s16)(1000.f * ((f32)stickLX / 32768.0f));
+                        if (b)
+                        {
+                            XINPUT_VIBRATION vibr;
+                            vibr.wLeftMotorSpeed = 5000;
+                            vibr.wRightMotorSpeed = 5000;
+                            HRESULT setResult = XInputSetState(i, &vibr);
+                            printf("%ld", setResult);
+                        }
                     }
                     else
                     {
                     }
                 }
 
-                XINPUT_VIBRATION vibr;
-                vibr.wLeftMotorSpeed = 60000;
-                vibr.wRightMotorSpeed = 60000;
-                // XInputSetState(0, &vibr);
-
-                // Lock and write square wave to sound buffer (once)
-                if (g_secondaryBuffer && !g_soundBufferInitialized)
+                if (g_secondaryBuffer)
                 {
-                    void *region1 = 0;
-                    void *region2 = 0;
-                    DWORD region1Size = 0;
-                    DWORD region2Size = 0;
-
-                    DWORD bufferSize = 48000 * sizeof(u16) * 2; // 1 second of audio
-                    HRESULT lockResult = g_secondaryBuffer->Lock(
-                        0,            // dwOffset
-                        bufferSize,   // dwBytes
-                        &region1,     // ppvAudioPtr1
-                        &region1Size, // pdwAudioBytes1
-                        &region2,     // ppvAudioPtr2
-                        &region2Size, // pdwAudioBytes2
-                        0);           // dwFlags
-
-                    if (SUCCEEDED(lockResult))
+                    DWORD playCursor;
+                    DWORD writeCursor;
+                    DWORD status;
+                    if (
+                        SUCCEEDED(g_secondaryBuffer->GetCurrentPosition(&playCursor, &writeCursor)) &&
+                        SUCCEEDED(g_secondaryBuffer->GetStatus(&status)))
                     {
-                        // Generate a nice beat pattern
-                        u32 sampleRate = 48000;
-                        u32 beatLength = sampleRate;         // 1 second beat loop
-                        u32 samplesPerBeat = sampleRate / 4; // 4 beats per second (120 BPM)
+                        DWORD byteToLock = (soundOutput.runningSampleIndex * soundOutput.bytesPerSample) % soundOutput.secondaryBufferSize;
+                        DWORD bytesToWrite;
+                        DWORD targetCursor = (playCursor + (soundOutput.latencySampleCount * soundOutput.bytesPerSample)) % soundOutput.secondaryBufferSize;
 
-                        // Write to region 1
-                        s16 *sampleOut = (s16 *)region1;
-                        DWORD sampleCount = region1Size / (sizeof(s16) * 2); // 2 channels
-
-                        for (DWORD i = 0; i < sampleCount; ++i)
+                        if (byteToLock > targetCursor)
                         {
-                            u32 sampleIndex = i;
-                            u32 beatPosition = sampleIndex % beatLength;
-                            u32 beatInMeasure = beatPosition / samplesPerBeat;
-                            u32 positionInBeat = beatPosition % samplesPerBeat;
-
-                            s16 leftSample = 0;
-                            s16 rightSample = 0;
-
-                            // Kick drum on beats 0 and 2
-                            if (beatInMeasure == 0 || beatInMeasure == 2)
-                            {
-                                if (positionInBeat < 2000) // Short kick
-                                {
-                                    f32 t = (f32)positionInBeat / 48000.0f;
-                                    f32 envelope = expf(-t * 15.0f);
-                                    s16 kick = (s16)(sinf(2.0f * 3.14159f * 60.0f * t) * 12000.0f * envelope);
-                                    leftSample += kick;
-                                    rightSample += kick;
-                                }
-                            }
-
-                            // Snare on beats 1 and 3
-                            if (beatInMeasure == 1 || beatInMeasure == 3)
-                            {
-                                if (positionInBeat < 1500) // Short snare
-                                {
-                                    f32 t = (f32)positionInBeat / 48000.0f;
-                                    f32 envelope = expf(-t * 20.0f);
-                                    // Snare: mix of noise and tone
-                                    s16 snare = (s16)((sinf(2.0f * 3.14159f * 200.0f * t) +
-                                                       sinf(2.0f * 3.14159f * 400.0f * t) * 0.5f) *
-                                                      8000.0f * envelope);
-                                    leftSample += snare;
-                                    rightSample += snare;
-                                }
-                            }
-
-                            // Hi-hat on off-beats
-                            if (positionInBeat < 500 && (beatInMeasure == 0 || beatInMeasure == 2))
-                            {
-                                f32 t = (f32)positionInBeat / 48000.0f;
-                                f32 envelope = expf(-t * 30.0f);
-                                s16 hihat = (s16)(sinf(2.0f * 3.14159f * 8000.0f * t) * 4000.0f * envelope);
-                                leftSample += hihat;
-                                rightSample += hihat;
-                            }
-
-                            // Clamp to prevent clipping
-                            if (leftSample > 32767)
-                                leftSample = 32767;
-                            if (leftSample < -32768)
-                                leftSample = -32768;
-                            if (rightSample > 32767)
-                                rightSample = 32767;
-                            if (rightSample < -32768)
-                                rightSample = -32768;
-
-                            *sampleOut++ = leftSample;
-                            *sampleOut++ = rightSample;
+                            bytesToWrite = soundOutput.secondaryBufferSize - byteToLock;
+                            bytesToWrite += targetCursor;
+                        }
+                        else
+                        {
+                            bytesToWrite = targetCursor - byteToLock;
                         }
 
-                        // Write to region 2 if it exists (wraparound)
-                        if (region2)
-                        {
-                            sampleOut = (s16 *)region2;
-                            sampleCount = region2Size / (sizeof(s16) * 2);
-
-                            for (DWORD i = 0; i < sampleCount; ++i)
-                            {
-                                u32 sampleIndex = region1Size / (sizeof(s16) * 2) + i;
-                                u32 beatPosition = sampleIndex % beatLength;
-                                u32 beatInMeasure = beatPosition / samplesPerBeat;
-                                u32 positionInBeat = beatPosition % samplesPerBeat;
-
-                                s16 leftSample = 0;
-                                s16 rightSample = 0;
-
-                                // Kick drum on beats 0 and 2
-                                if (beatInMeasure == 0 || beatInMeasure == 2)
-                                {
-                                    if (positionInBeat < 2000)
-                                    {
-                                        f32 t = (f32)positionInBeat / 48000.0f;
-                                        f32 envelope = expf(-t * 15.0f);
-                                        s16 kick = (s16)(sinf(2.0f * 3.14159f * 60.0f * t) * 12000.0f * envelope);
-                                        leftSample += kick;
-                                        rightSample += kick;
-                                    }
-                                }
-
-                                // Snare on beats 1 and 3
-                                if (beatInMeasure == 1 || beatInMeasure == 3)
-                                {
-                                    if (positionInBeat < 1500)
-                                    {
-                                        f32 t = (f32)positionInBeat / 48000.0f;
-                                        f32 envelope = expf(-t * 20.0f);
-                                        s16 snare = (s16)((sinf(2.0f * 3.14159f * 200.0f * t) +
-                                                           sinf(2.0f * 3.14159f * 400.0f * t) * 0.5f) *
-                                                          8000.0f * envelope);
-                                        leftSample += snare;
-                                        rightSample += snare;
-                                    }
-                                }
-
-                                // Hi-hat on off-beats
-                                if (positionInBeat < 500 && (beatInMeasure == 0 || beatInMeasure == 2))
-                                {
-                                    f32 t = (f32)positionInBeat / 48000.0f;
-                                    f32 envelope = expf(-t * 30.0f);
-                                    s16 hihat = (s16)(sinf(2.0f * 3.14159f * 8000.0f * t) * 4000.0f * envelope);
-                                    leftSample += hihat;
-                                    rightSample += hihat;
-                                }
-
-                                // Clamp to prevent clipping
-                                if (leftSample > 32767)
-                                    leftSample = 32767;
-                                if (leftSample < -32768)
-                                    leftSample = -32768;
-                                if (rightSample > 32767)
-                                    rightSample = 32767;
-                                if (rightSample < -32768)
-                                    rightSample = -32768;
-
-                                *sampleOut++ = leftSample;
-                                *sampleOut++ = rightSample;
-                            }
-                        }
-
-                        g_secondaryBuffer->Unlock(region1, region1Size, region2, region2Size);
-
-                        // Start playback
-                        g_secondaryBuffer->Play(0, 0, DSBPLAY_LOOPING);
-
-                        g_soundBufferInitialized = true;
-                        printf("[DEBUG] Beat pattern written to sound buffer and playback started\n");
+                        Win32FillSoundBuffer(&soundOutput, byteToLock, bytesToWrite);
                     }
                     else
                     {
-                        printf("[WARNING] Failed to lock sound buffer\n");
+                        printf("[WARNING] Failed to get sound buffer info\n");
                     }
                 }
 
