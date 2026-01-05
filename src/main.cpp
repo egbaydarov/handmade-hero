@@ -1,4 +1,7 @@
+#include <dsound.h>
 #include <libloaderapi.h>
+#include <minwinbase.h>
+#include <mmeapi.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <windows.h>
@@ -57,6 +60,90 @@ X_INPUT_SET_STATE(XInputSetStateStub)
 }
 GLOBAL_VARIABLE x_input_set_state *XInputSetState_ = XInputSetStateStub;
 #define XInputSetState XInputSetState_
+
+#define DIRECT_SOUND_CREATE(name) HRESULT WINAPI name(LPCGUID lpGUID, LPDIRECTSOUND *ppDS, LPUNKNOWN pUnkOuter)
+typedef DIRECT_SOUND_CREATE(direct_sound_create);
+
+INTERNAL void
+Win32LoadDSound(
+    HWND window,
+    u32 samplePerSec,
+    u32 bufferSize)
+{
+    HMODULE dSoundLib = LoadLibraryA("dsound.dll");
+
+    if (dSoundLib)
+    {
+        direct_sound_create *DirectSoundCreate = (direct_sound_create *)GetProcAddress(
+            dSoundLib,
+            "DirectSoundCreate");
+
+        IDirectSound *directSound;
+        if (DirectSoundCreate && SUCCEEDED(DirectSoundCreate(0, &directSound, 0)))
+        {
+            WAVEFORMATEX waveFormat;
+            waveFormat.wFormatTag = WAVE_FORMAT_PCM;
+            waveFormat.nChannels = 2;
+            waveFormat.nSamplesPerSec = samplePerSec;
+            waveFormat.wBitsPerSample = 16;
+            waveFormat.nBlockAlign = (waveFormat.nChannels * waveFormat.wBitsPerSample) / 8;
+            waveFormat.nAvgBytesPerSec = waveFormat.nSamplesPerSec * waveFormat.nBlockAlign;
+            waveFormat.cbSize = 0;
+            printf("[DEBUG] directsound dll loaded\n");
+            if (SUCCEEDED(directSound->SetCooperativeLevel(window, DSSCL_PRIORITY)))
+            {
+                printf("[DEBUG] directsound set level ok\n");
+                DSBUFFERDESC bufferDesc = {};
+                bufferDesc.dwSize = sizeof(bufferDesc);
+                bufferDesc.dwFlags = DSBCAPS_PRIMARYBUFFER;
+
+                LPDIRECTSOUNDBUFFER primaryBuffer;
+                if (SUCCEEDED(directSound->CreateSoundBuffer(&bufferDesc, &primaryBuffer, 0)))
+                {
+                    printf("[DEBUG] directsound primary buffer created\n");
+                    if (SUCCEEDED(primaryBuffer->SetFormat(&waveFormat)))
+                    {
+                        printf("[DEBUG] directsound primary buffer format set\n");
+                        DSBUFFERDESC secondaryBufferDesc = {};
+                        secondaryBufferDesc.dwSize = sizeof(secondaryBufferDesc);
+                        secondaryBufferDesc.dwBufferBytes = bufferSize;
+                        secondaryBufferDesc.lpwfxFormat = &waveFormat;
+
+                        LPDIRECTSOUNDBUFFER secondaryBuffer;
+                        if (SUCCEEDED(directSound->CreateSoundBuffer(&secondaryBufferDesc, &secondaryBuffer, 0)))
+                        {
+                            printf("[DEBUG] directsound secondary buffer created\n");
+                        }
+                        else
+                        {
+                            printf("[WARNING] directsound create sb failed\n");
+                        }
+                    }
+                    else
+                    {
+                        printf("[WARNING] directsound set pb format failed\n");
+                    }
+                }
+                else
+                {
+                    printf("[WARNING] directsound create pb failed\n");
+                }
+            }
+            else
+            {
+                printf("[WARNING] directsound set level failed\n");
+            }
+        }
+        else
+        {
+            printf("[WARNING] directsound dll load failed\n");
+        }
+    }
+    else
+    {
+        printf("[WARNING] directsound dll not found\n");
+    }
+}
 
 INTERNAL void
 Win32LoadXinput(void)
@@ -683,6 +770,8 @@ WinMain(
 
         if (window)
         {
+            Win32LoadDSound(window, 48000, 48000 * sizeof(u16) * 2);
+
             // NOTE(byda): depends on window creation flag (should I create a
             // hdc each iteration or not)
             HDC hdc = GetDC(window);
