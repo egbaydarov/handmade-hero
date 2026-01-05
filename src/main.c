@@ -1,4 +1,5 @@
 #include <dsound.h>
+#include <float.h>
 #include <math.h>
 #include <profileapi.h>
 #include <stdint.h>
@@ -42,21 +43,21 @@ struct win32_window_dimension
 
 struct win32_sound_output
 {
-    u16 samplesPerSec = 48000;
-    u16 toneHz = 256;
-    f32 tSine = 0;
+    u16 samplesPerSec;
+    u16 toneHz;
+    f32 tSine;
 
-    u16 volume = 1000;
-    s16 lrBalance = 0;
-    u16 bytesPerSample = sizeof(u16) * 2;
-    u16 secondaryBufferSize = samplesPerSec * bytesPerSample;
+    u16 volume;
+    s16 lrBalance;
+    u16 bytesPerSample;
+    u16 secondaryBufferSize;
 
     u32 runningSampleIndex;
     u32 latencySampleCount;
 };
 
 GLOBAL_VARIABLE b32 g_running;
-GLOBAL_VARIABLE win32_offscreen_buffer g_backBuffer;
+GLOBAL_VARIABLE struct win32_offscreen_buffer g_backBuffer;
 GLOBAL_VARIABLE IDirectSoundBuffer *g_secondaryBuffer;
 
 typedef DWORD WINAPI
@@ -110,8 +111,9 @@ Win32LoadDirectSound(
             waveFormat.nBlockAlign = (waveFormat.nChannels * waveFormat.wBitsPerSample) / 8;
             waveFormat.nAvgBytesPerSec = waveFormat.nSamplesPerSec * waveFormat.nBlockAlign;
             waveFormat.cbSize = 0;
+
             printf("[DEBUG dll loaded\n");
-            if (SUCCEEDED(directSound->SetCooperativeLevel(window, DSSCL_PRIORITY)))
+            if (SUCCEEDED(directSound->lpVtbl->SetCooperativeLevel(directSound, window, DSSCL_PRIORITY)))
             {
                 printf("[DEBUG] dsound set level ok\n");
                 DSBUFFERDESC bufferDesc = {};
@@ -119,18 +121,17 @@ Win32LoadDirectSound(
                 bufferDesc.dwFlags = DSBCAPS_PRIMARYBUFFER;
 
                 IDirectSoundBuffer *primaryBuffer;
-                if (SUCCEEDED(directSound->CreateSoundBuffer(&bufferDesc, &primaryBuffer, 0)))
+                if (SUCCEEDED(directSound->lpVtbl->CreateSoundBuffer(directSound, &bufferDesc, &primaryBuffer, 0)))
                 {
-                    printf("[DEBUG] dsound primary buffer created\n");
-                    if (SUCCEEDED(primaryBuffer->SetFormat(&waveFormat)))
+                    if (SUCCEEDED(primaryBuffer->lpVtbl->SetFormat(primaryBuffer, &waveFormat)))
                     {
-                        printf("[DEBUG] dsound primary buffer format set\n");
+                        printf("[DEBUG] dsound primary buffer created\n");
                         DSBUFFERDESC secondaryBufferDesc = {};
                         secondaryBufferDesc.dwSize = sizeof(secondaryBufferDesc);
                         secondaryBufferDesc.dwBufferBytes = bufferSize;
                         secondaryBufferDesc.lpwfxFormat = &waveFormat;
 
-                        if (SUCCEEDED(directSound->CreateSoundBuffer(&secondaryBufferDesc, &g_secondaryBuffer, 0)))
+                        if (SUCCEEDED(directSound->lpVtbl->CreateSoundBuffer(directSound, &secondaryBufferDesc, &g_secondaryBuffer, 0)))
                         {
                             printf("[DEBUG] dsound secondary buffer created\n");
                         }
@@ -188,11 +189,11 @@ Win32LoadXinput(void)
     }
 }
 
-INTERNAL win32_window_dimension
+INTERNAL struct win32_window_dimension
 Win32GetWindowDimension(
     HWND window)
 {
-    win32_window_dimension result;
+    struct win32_window_dimension result;
     RECT rect;
     BOOL ok = GetClientRect(window, &rect);
 
@@ -207,7 +208,7 @@ Win32GetWindowDimension(
 
 INTERNAL void
 RenderShit(
-    win32_offscreen_buffer *buffer,
+    struct win32_offscreen_buffer *buffer,
     int xOffset,
     int yOffset)
 {
@@ -238,7 +239,7 @@ RenderShit(
 
 INTERNAL void
 Win32ResizeDIBSection(
-    win32_offscreen_buffer *buffer,
+    struct win32_offscreen_buffer *buffer,
     int width,
     int height)
 {
@@ -267,7 +268,7 @@ Win32ResizeDIBSection(
 
 INTERNAL void
 Win32UpdateWindow(
-    win32_offscreen_buffer *buffer,
+    struct win32_offscreen_buffer *buffer,
     HDC hdc,
     int windowWidth,
     int windowHeight)
@@ -332,7 +333,7 @@ Win32MainWindowCallback(
         {
         case 'Q':
         case VK_ESCAPE:
-            g_running = false;
+            g_running = 0;
         case 'W':
         case 'S':
         case 'A':
@@ -350,13 +351,13 @@ Win32MainWindowCallback(
     break;
     case WM_DESTROY:
     {
-        g_running = false;
+        g_running = 0;
     }
     break;
 
     case WM_CLOSE:
     {
-        g_running = false;
+        g_running = 0;
     }
     break;
 
@@ -367,7 +368,7 @@ Win32MainWindowCallback(
 
         // TODO(byda): workaround
 
-        win32_window_dimension windowDim = Win32GetWindowDimension(window);
+        struct win32_window_dimension windowDim = Win32GetWindowDimension(window);
         Win32UpdateWindow(
             &g_backBuffer,
             hdc,
@@ -391,7 +392,7 @@ Win32MainWindowCallback(
 
 INTERNAL VOID
 Win32FillSoundBuffer(
-    win32_sound_output *soundOutput,
+    struct win32_sound_output *soundOutput,
     DWORD byteToLock,
     DWORD bytesToWrite)
 {
@@ -400,7 +401,8 @@ Win32FillSoundBuffer(
     DWORD region1Size = 0;
     DWORD region2Size = 0;
 
-    HRESULT lockResult = g_secondaryBuffer->Lock(
+    HRESULT lockResult = g_secondaryBuffer->lpVtbl->Lock(
+        g_secondaryBuffer,
         byteToLock,
         bytesToWrite,
         &region1,
@@ -431,7 +433,7 @@ Win32FillSoundBuffer(
             soundOutput->tSine += (2.0 * M_PI) * (f32)1.0f / ((f32)soundOutput->samplesPerSec / soundOutput->toneHz);
             ++soundOutput->runningSampleIndex;
         }
-        g_secondaryBuffer->Unlock(region1, region1Size, region2, region2Size);
+        g_secondaryBuffer->lpVtbl->Unlock(g_secondaryBuffer, region1, region1Size, region2, region2Size);
     }
     else
     {
@@ -480,7 +482,7 @@ WinMain(
             int xOffset = 0;
             int yOffset = 0;
 
-            win32_sound_output soundOutput = {};
+            struct win32_sound_output soundOutput = {};
             soundOutput.samplesPerSec = 48000;
             soundOutput.toneHz = 512;
             soundOutput.tSine = 0;
@@ -495,12 +497,12 @@ WinMain(
                 soundOutput.secondaryBufferSize);
 
             Win32FillSoundBuffer(&soundOutput, 0, soundOutput.latencySampleCount * soundOutput.bytesPerSample);
-            g_secondaryBuffer->Play(0, 0, DSBPLAY_LOOPING);
+            g_secondaryBuffer->lpVtbl->Play(g_secondaryBuffer, 0, 0, DSBPLAY_LOOPING);
 
             // NOTE(byda): depends on window creation flag (should I create a
             // hdc each iteration or not)
             HDC hdc = GetDC(window);
-            g_running = true;
+            g_running = 1;
 
             LARGE_INTEGER perfCounterFreqWin;
             QueryPerformanceFrequency(&perfCounterFreqWin);
@@ -518,7 +520,7 @@ WinMain(
                 {
                     if (msg.message == WM_QUIT)
                     {
-                        g_running = false;
+                        g_running = 0;
                     }
 
                     TranslateMessage(&msg);
@@ -577,8 +579,8 @@ WinMain(
                     DWORD writeCursor;
                     DWORD status;
                     if (
-                        SUCCEEDED(g_secondaryBuffer->GetCurrentPosition(&playCursor, &writeCursor)) &&
-                        SUCCEEDED(g_secondaryBuffer->GetStatus(&status)))
+                        SUCCEEDED(g_secondaryBuffer->lpVtbl->GetCurrentPosition(g_secondaryBuffer, &playCursor, &writeCursor)) &&
+                        SUCCEEDED(g_secondaryBuffer->lpVtbl->GetStatus(g_secondaryBuffer, &status)))
                     {
                         DWORD byteToLock = (soundOutput.runningSampleIndex * soundOutput.bytesPerSample) % soundOutput.secondaryBufferSize;
                         DWORD bytesToWrite;
@@ -604,7 +606,7 @@ WinMain(
 
                 RenderShit(&g_backBuffer, xOffset, yOffset);
 
-                win32_window_dimension windowDim = Win32GetWindowDimension(
+                struct win32_window_dimension windowDim = Win32GetWindowDimension(
                     window);
                 Win32UpdateWindow(
                     &g_backBuffer,
@@ -621,7 +623,7 @@ WinMain(
                 u64 cyclesElapsed = endCounterCycles - lastCounterCycles;
 
                 printf(
-                    "\r%4I64u f/s, %2I64u ms/f, %3I64u mc/f",
+                    "\r%4llu f/s, %2llu ms/f, %3llu mc/f",
                     1000 / perfMillis,
                     perfMillis,
                     cyclesElapsed / (1000 * 1000));
