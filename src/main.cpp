@@ -1,8 +1,10 @@
 #include <dsound.h>
 #include <math.h>
+#include <profileapi.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <windows.h>
+#include <winnt.h>
 #include <xinput.h>
 
 #define GLOBAL_VARIABLE static
@@ -500,7 +502,15 @@ WinMain(
             HDC hdc = GetDC(window);
             g_running = true;
 
-            size_t j = 0;
+            LARGE_INTEGER perfCounterFreqWin;
+            QueryPerformanceFrequency(&perfCounterFreqWin);
+            u64 perfCounterFreq = perfCounterFreqWin.QuadPart;
+
+            LARGE_INTEGER lastCounter;
+            QueryPerformanceCounter(&lastCounter);
+
+            u64 lastCounterCycles = __rdtsc();
+
             while (g_running)
             {
                 MSG msg;
@@ -602,7 +612,22 @@ WinMain(
                     windowDim.width,
                     windowDim.height);
 
-                ReleaseDC(window, hdc);
+                LARGE_INTEGER endCounter;
+                QueryPerformanceCounter(&endCounter);
+                u64 endCounterCycles = __rdtsc();
+
+                u64 counterElapsed = endCounter.QuadPart - lastCounter.QuadPart;
+                u64 perfMillis = counterElapsed / (perfCounterFreq / 1000);
+                u64 cyclesElapsed = endCounterCycles - lastCounterCycles;
+
+                printf(
+                    "\r%4I64u f/s, %2I64u ms/f, %3I64u mc/f",
+                    1000 / perfMillis,
+                    perfMillis,
+                    cyclesElapsed / (1000 * 1000));
+
+                lastCounterCycles = endCounterCycles;
+                lastCounter = endCounter;
             }
         }
         else
