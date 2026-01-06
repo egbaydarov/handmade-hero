@@ -23,14 +23,7 @@
             pkgs.llvmPackages.llvm
             pkgs.llvmPackages.lld
 
-            # Linux native build deps (Wayland)
-            pkgs.wayland
-            pkgs.wayland.dev
-            pkgs.wayland-protocols
-            pkgs.wayland-scanner
-            pkgs.alsa-lib
-            pkgs.alsa-lib.dev
-
+            # controller shit
             wine
 
             cross.stdenv.cc
@@ -43,10 +36,6 @@
 
             export CC=$TARGET-gcc
             export CLANG=$TARGET-clang
-
-            # Native Linux compiler (for linux_handmade.c)
-            export CC_LINUX=${pkgs.clang}/bin/clang
-            export CXX_LINUX=${pkgs.clang}/bin/clang++
 
             export WINEDEBUG=-all
             export WINEPREFIX="$PWD/.wine"
@@ -66,7 +55,6 @@
 
             echo "Wine: $(command -v wine)"
             echo "MinGW target: $TARGET"
-            echo "Linux compiler: $CC_LINUX"
           '';
         };
       });
