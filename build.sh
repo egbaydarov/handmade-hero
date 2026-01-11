@@ -5,7 +5,7 @@ set -e
 if [[ $# -gt 0 ]]; then
   CFLAGS=("$@")
 else
-  CFLAGS=(-O0 -gcodeview -g)
+  CFLAGS=(-O3 -gcodeview -g3)
 fi
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -25,6 +25,7 @@ mkdir -p -- "$BUILD_DIR"
       -ftime-report \
       -fuse-ld=lld \
       -Wl,--pdb=win32_handmade.pdb \
+      -DHANDMADE_WIN32=1 \
       -o win32_handmade.exe \
       -luser32 \
       -lgdi32

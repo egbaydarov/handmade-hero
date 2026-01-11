@@ -1,30 +1,13 @@
+#include "handmade.c"
+
 #include <dsound.h>
 #include <float.h>
 #include <math.h>
 #include <profileapi.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <windows.h>
 #include <winnt.h>
 #include <xinput.h>
-
-#define GLOBAL_VARIABLE static
-#define LOCAL_PERSIST   static
-#define INTERNAL        static
-
-typedef int32_t b32;
-typedef uint8_t u8;
-typedef uint16_t u16;
-typedef uint32_t u32;
-typedef uint64_t u64;
-
-typedef int8_t s8;
-typedef int16_t s16;
-typedef int32_t s32;
-typedef int64_t s64;
-
-typedef float f32;
-typedef double f64;
 
 struct win32_offscreen_buffer
 {
@@ -204,37 +187,6 @@ Win32GetWindowDimension(
     result.height = rect.bottom - rect.top;
 
     return (result);
-}
-
-INTERNAL void
-RenderShit(
-    struct win32_offscreen_buffer *buffer,
-    int xOffset,
-    int yOffset)
-{
-    int pitch = buffer->bitmapWidth * buffer->bytesPerPixel;
-    u8 *row = (u8 *)buffer->bitmapMemory;
-
-    for (int y = 0; y < buffer->bitmapHeight; ++y)
-    {
-        u32 *pixel = (u32 *)row;
-
-        // for (int x = 255 - (u8)xOffset; x < g_bitmapWidth; ++x)
-        for (int x = 0; x < buffer->bitmapWidth; ++x)
-        {
-            // u8 r = (u8)(x * y + xOffset + yOffset);
-            u8 r = 0;
-            u8 b = (u8)x + xOffset;
-            u8 g = (u8)y + yOffset;
-
-            // win format (bbggrraa) : le format (aarrggbb)
-            *pixel++ = (255 << 24) | (r << 16) | (g << 8) | b;
-
-            //*pixel++ = 0xFF0000FF;
-        }
-
-        row += pitch;
-    }
 }
 
 INTERNAL void
@@ -479,8 +431,8 @@ WinMain(
 
         if (window)
         {
-            int xOffset = 0;
-            int yOffset = 0;
+            s32 xOffset = 0;
+            s32 yOffset = 0;
 
             struct win32_sound_output soundOutput = {};
             soundOutput.samplesPerSec = 48000;
@@ -604,7 +556,13 @@ WinMain(
                     }
                 }
 
-                RenderShit(&g_backBuffer, xOffset, yOffset);
+                game_offscreen_buffer buffer = {};
+                buffer.bitmapMemory = g_backBuffer.bitmapMemory;
+                buffer.bitmapWidth = g_backBuffer.bitmapWidth;
+                buffer.bitmapHeight = g_backBuffer.bitmapHeight;
+                buffer.bytesPerPixel = g_backBuffer.bytesPerPixel;
+
+                GameUpdateAndRender(&buffer, xOffset, yOffset);
 
                 struct win32_window_dimension windowDim = Win32GetWindowDimension(
                     window);
@@ -616,17 +574,18 @@ WinMain(
 
                 LARGE_INTEGER endCounter;
                 QueryPerformanceCounter(&endCounter);
-                u64 endCounterCycles = __rdtsc();
 
+                u64 endCounterCycles = __rdtsc();
                 u64 counterElapsed = endCounter.QuadPart - lastCounter.QuadPart;
                 u64 perfMillis = counterElapsed / (perfCounterFreq / 1000);
                 u64 cyclesElapsed = endCounterCycles - lastCounterCycles;
-
+#if 0
                 printf(
                     "\r%4llu f/s, %2llu ms/f, %3llu mc/f",
                     1000 / perfMillis,
                     perfMillis,
                     cyclesElapsed / (1000 * 1000));
+#endif
 
                 lastCounterCycles = endCounterCycles;
                 lastCounter = endCounter;
