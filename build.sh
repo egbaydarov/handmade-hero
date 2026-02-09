@@ -5,7 +5,7 @@ set -e
 if [[ $# -gt 0 ]]; then
   CFLAGS=("$@")
 else
-  CFLAGS=(-O3 -gcodeview -g3)
+  CFLAGS=(-O0 -gcodeview -g3)
 fi
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)

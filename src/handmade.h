@@ -16,6 +16,14 @@ typedef int64_t s64;
 typedef float f32;
 typedef double f64;
 
+typedef struct game_input
+{
+    u16 rxOffset;
+    u16 ryOffset;
+    u16 lxOffset;
+    u16 lyOffset;
+} game_input;
+
 typedef struct game_offscreen_buffer
 {
     void *bitmapMemory;
@@ -24,8 +32,24 @@ typedef struct game_offscreen_buffer
     int bytesPerPixel;
 } game_offscreen_buffer;
 
+typedef struct game_sound_output_buffer
+{
+    s16 *samples;
+    s32 samplesCount;
+    u16 samplesPerSec;
+} game_sound_output_buffer;
+
+typedef struct game_window_dimension
+{
+    int width;
+    int height;
+} game_window_dimension;
+
 INTERNAL void
-GameUpdateAndRender(game_offscreen_buffer *buffer, s32 blueOffset, s32 greenOffset);
+GameUpdateAndRender(
+    game_offscreen_buffer *buffer,
+    game_sound_output_buffer *soundBuffer,
+    game_input *gameInput);
 
 #define HANDMADE_H
 #endif
