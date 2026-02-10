@@ -4,6 +4,7 @@
 #define INTERNAL        static
 #define GLOBAL_VARIABLE static
 #define LOCAL_PERSIST   static
+#define ARRAY_COUNT(x)  (sizeof(x) / sizeof((x)[0]))
 typedef int32_t b32;
 typedef uint8_t u8;
 typedef uint16_t u16;
@@ -16,12 +17,49 @@ typedef int64_t s64;
 typedef float f32;
 typedef double f64;
 
+typedef struct game_button_state
+{
+    s32 halfTransitionsCount;
+    b32 endedDown;
+} game_button_state;
+
+typedef struct game_controller_input
+{
+    b32 isAnalog;
+    f32 startX;
+    f32 startY;
+
+    f32 minX;
+    f32 minY;
+
+    f32 maxX;
+    f32 maxY;
+
+    f32 endX;
+    f32 endY;
+
+    union
+    {
+        game_button_state buttons[6];
+        struct
+        {
+            game_button_state Triangle;
+            game_button_state Square;
+            game_button_state Cross;
+            game_button_state Circle;
+            game_button_state Up;
+            game_button_state Down;
+            game_button_state Left;
+            game_button_state Right;
+            game_button_state LeftShoulder;
+            game_button_state RightShoulder;
+        };
+    };
+} game_controller_input;
+
 typedef struct game_input
 {
-    u16 rxOffset;
-    u16 ryOffset;
-    u16 lxOffset;
-    u16 lyOffset;
+    game_controller_input controllers[4];
 } game_input;
 
 typedef struct game_offscreen_buffer

@@ -402,6 +402,17 @@ Win32FillSoundBuffer(
     }
 }
 
+INTERNAL void
+Win32ProcessXInputDigitalButton(
+    game_button_state *newState,
+    game_button_state *oldState,
+    DWORD xInputButtonState,
+    DWORD buttonBit)
+{
+    newState->endedDown = (xInputButtonState & buttonBit) == buttonBit;
+    newState->halfTransitionsCount = (oldState->endedDown != newState->endedDown) ? 1 : 0;
+}
+
 int WINAPI
 WinMain(
     HINSTANCE instance,
@@ -474,10 +485,11 @@ WinMain(
             Win32ClearSoundBuffer(&soundOutput);
             g_secondaryBuffer->lpVtbl->Play(g_secondaryBuffer, 0, 0, DSBPLAY_LOOPING);
 
-            game_input gameInput = {};
             while (g_running)
             {
                 MSG msg;
+                game_input newInput = {};
+                game_input oldInput = {};
                 while (PeekMessageA(&msg, 0, 0, 0, PM_REMOVE))
                 {
                     if (msg.message == WM_QUIT)
@@ -489,38 +501,107 @@ WinMain(
                     DispatchMessageA(&msg);
                 }
 
-                for (DWORD i = 0; i < XUSER_MAX_COUNT; ++i)
+                DWORD controllerCount = XUSER_MAX_COUNT;
+                if (controllerCount > ARRAY_COUNT(newInput.controllers))
                 {
+                    controllerCount = ARRAY_COUNT(newInput.controllers);
+                }
+
+                for (DWORD i = 0; i < controllerCount; ++i)
+                {
+                    game_controller_input *oldController = &oldInput.controllers[i];
+                    game_controller_input *newController = &newInput.controllers[i];
+
                     XINPUT_STATE state;
 
                     if (SUCCEEDED(XInputGetState(i, &state)))
                     {
                         XINPUT_GAMEPAD *gamepad = &state.Gamepad;
+                        Win32ProcessXInputDigitalButton(
+                            &newController->Circle,
+                            &oldController->Circle,
+                            gamepad->wButtons,
+                            XINPUT_GAMEPAD_B);
+                        Win32ProcessXInputDigitalButton(
+                            &newController->Cross,
+                            &oldController->Cross,
+                            gamepad->wButtons,
+                            XINPUT_GAMEPAD_A);
+                        Win32ProcessXInputDigitalButton(
+                            &newController->Triangle,
+                            &oldController->Triangle,
+                            gamepad->wButtons,
+                            XINPUT_GAMEPAD_Y);
+                        Win32ProcessXInputDigitalButton(
+                            &newController->Square,
+                            &oldController->Square,
+                            gamepad->wButtons,
+                            XINPUT_GAMEPAD_X);
+                        Win32ProcessXInputDigitalButton(
+                            &newController->Up,
+                            &oldController->Up,
+                            gamepad->wButtons,
+                            XINPUT_GAMEPAD_DPAD_UP);
+                        Win32ProcessXInputDigitalButton(
+                            &newController->Down,
+                            &oldController->Down,
+                            gamepad->wButtons,
+                            XINPUT_GAMEPAD_DPAD_DOWN);
+                        Win32ProcessXInputDigitalButton(
+                            &newController->Left,
+                            &oldController->Left,
+                            gamepad->wButtons,
+                            XINPUT_GAMEPAD_DPAD_LEFT);
+                        Win32ProcessXInputDigitalButton(
+                            &newController->Right,
+                            &oldController->Right,
+                            gamepad->wButtons,
+                            XINPUT_GAMEPAD_DPAD_RIGHT);
+                        Win32ProcessXInputDigitalButton(
+                            &newController->RightShoulder,
+                            &oldController->RightShoulder,
+                            gamepad->wButtons,
+                            XINPUT_GAMEPAD_RIGHT_SHOULDER);
+                        Win32ProcessXInputDigitalButton(
+                            &newController->LeftShoulder,
+                            &oldController->LeftShoulder,
+                            gamepad->wButtons,
+                            XINPUT_GAMEPAD_LEFT_SHOULDER);
 
-                        b32 dpadUp = gamepad->wButtons & XINPUT_GAMEPAD_DPAD_UP;
-                        b32 dpadDown = gamepad->wButtons & XINPUT_GAMEPAD_DPAD_DOWN;
-                        b32 dpadLeft = gamepad->wButtons & XINPUT_GAMEPAD_DPAD_LEFT;
-                        b32 dpadRight = gamepad->wButtons & XINPUT_GAMEPAD_DPAD_RIGHT;
+                        newController->isAnalog = TRUE;
+                        f32 stickLX;
+                        if (gamepad->sThumbLX < 0)
+                        {
+                            stickLX = gamepad->sThumbLX / 32768.0;
+                        }
+                        else
+                        {
+                            stickLX = gamepad->sThumbLX / 32767.0;
+                        }
+
+                        newController->startX = oldController->endX;
+                        newController->maxX = newController->minY = newController->endX = stickLX;
+
+                        f32 stickLY;
+                        if (gamepad->sThumbLY < 0)
+                        {
+                            stickLY = gamepad->sThumbLY / 32768.0;
+                        }
+                        else
+                        {
+                            stickLY = gamepad->sThumbLY / 32767.0;
+                        }
+
+                        newController->startY = oldController->endY;
+                        newController->maxY = newController->minY = newController->endY = stickLX;
+
+#if 0
                         b32 start = gamepad->wButtons & XINPUT_GAMEPAD_START;
                         b32 back = gamepad->wButtons & XINPUT_GAMEPAD_BACK;
-                        b32 a = gamepad->wButtons & XINPUT_GAMEPAD_A;
-                        b32 b = gamepad->wButtons & XINPUT_GAMEPAD_B;
-                        b32 x = gamepad->wButtons & XINPUT_GAMEPAD_X;
-                        b32 y = gamepad->wButtons & XINPUT_GAMEPAD_Y;
-                        b32 lShoulder = gamepad->wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER;
-                        b32 rShoulder = gamepad->wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER;
                         b32 lThumb = gamepad->wButtons & XINPUT_GAMEPAD_LEFT_THUMB;
                         b32 rThumb = gamepad->wButtons & XINPUT_GAMEPAD_RIGHT_THUMB;
-                        SHORT stickLX = gamepad->sThumbLX;
-                        SHORT stickLY = gamepad->sThumbLY;
-                        SHORT stickRX = gamepad->sThumbRX;
-                        SHORT stickRY = gamepad->sThumbRY;
-
-                        gameInput.rxOffset = stickRX;
-                        gameInput.ryOffset = stickRY;
-                        gameInput.lxOffset = stickLX;
-                        gameInput.lyOffset = stickLY;
-
+                        f32 stickRX = gamepad->sThumbRX;
+                        f32 stickRY = gamepad->sThumbRY;
                         if (b)
                         {
                             XINPUT_VIBRATION vibr;
@@ -529,6 +610,7 @@ WinMain(
                             HRESULT setResult = XInputSetState(i, &vibr);
                             printf("%ld", setResult);
                         }
+#endif
                     }
                     else
                     {
@@ -566,7 +648,8 @@ WinMain(
 
                         soundBuffer.samplesCount = bytesToWrite / soundOutput.bytesPerSample;
 
-                        GameUpdateAndRender(&buffer, &soundBuffer, &gameInput);
+                        GameUpdateAndRender(&buffer, &soundBuffer, &newInput);
+
                         Win32FillSoundBuffer(&soundOutput, &soundBuffer, byteToLock, bytesToWrite);
                     }
                     else
@@ -600,6 +683,8 @@ WinMain(
 
                 lastCounterCycles = endCounterCycles;
                 lastCounter = endCounter;
+
+                oldInput = newInput;
             }
         }
         else
