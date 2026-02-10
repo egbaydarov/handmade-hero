@@ -4,6 +4,7 @@
 #include <dsound.h>
 #include <float.h>
 #include <malloc.h>
+#include <minwindef.h>
 #include <profileapi.h>
 #include <stdio.h>
 #include <windows.h>
@@ -457,7 +458,7 @@ WinMain(
             // NOTE(byda): depends on window creation flag (should I create a
             // hdc each iteration or not)
             HDC hdc = GetDC(window);
-            g_running = 1;
+            g_running = TRUE;
 
             LARGE_INTEGER perfCounterFreqWin;
             QueryPerformanceFrequency(&perfCounterFreqWin);
@@ -468,6 +469,18 @@ WinMain(
 
             u64 lastCounterCycles = __rdtsc();
 
+#if HANDMADE_INTERNAL
+            LPVOID baseAddress = (LPVOID)TERABYTES(2);
+            fprintf(stderr, "memory bottom at 0x%p\n", (void *)baseAddress);
+#else
+            LPVOID baseAddress = NULL;
+#endif
+            game_memory gameMemory = {};
+            gameMemory.permanentStorageSize = MEGABYTES(64);
+            gameMemory.transientStorageSize = GIGABYTES(4);
+            gameMemory.permanentStorage = VirtualAlloc(baseAddress, gameMemory.transientStorageSize + gameMemory.permanentStorageSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+            gameMemory.transientStorage = ((u8 *)gameMemory.permanentStorage + gameMemory.permanentStorageSize);
+
             struct win32_game_sound soundOutput = {};
             soundOutput.bytesPerSample = sizeof(u16) * 2;
             soundOutput.samplesPerSec = 48000;
@@ -477,6 +490,11 @@ WinMain(
             struct game_sound_output_buffer soundBuffer = {};
             soundBuffer.samplesPerSec = soundOutput.samplesPerSec;
             soundBuffer.samples = VirtualAlloc(0, soundOutput.secondaryBufferSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+
+            if (!soundBuffer.samples || !gameMemory.permanentStorage)
+            {
+                g_running = FALSE;
+            }
 
             Win32LoadDirectSound(
                 window,
@@ -648,7 +666,7 @@ WinMain(
 
                         soundBuffer.samplesCount = bytesToWrite / soundOutput.bytesPerSample;
 
-                        GameUpdateAndRender(&buffer, &soundBuffer, &newInput);
+                        GameUpdateAndRender(&gameMemory, &buffer, &soundBuffer, &newInput);
 
                         Win32FillSoundBuffer(&soundOutput, &soundBuffer, byteToLock, bytesToWrite);
                     }

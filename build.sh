@@ -26,6 +26,8 @@ mkdir -p -- "$BUILD_DIR"
       -fuse-ld=lld \
       -Wl,--pdb=win32_handmade.pdb \
       -DHANDMADE_WIN32=1 \
+      -DHANDMADE_SLOW \
+      -DHANDMADE_INTERNAL \
       -o win32_handmade.exe \
       -luser32 \
       -lgdi32

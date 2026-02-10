@@ -1,10 +1,10 @@
 #if !defined HANDMADE_H
 
 #include <stdint.h>
+#include <stdio.h>
 #define INTERNAL        static
 #define GLOBAL_VARIABLE static
 #define LOCAL_PERSIST   static
-#define ARRAY_COUNT(x)  (sizeof(x) / sizeof((x)[0]))
 typedef int32_t b32;
 typedef uint8_t u8;
 typedef uint16_t u16;
@@ -16,6 +16,40 @@ typedef int32_t s32;
 typedef int64_t s64;
 typedef float f32;
 typedef double f64;
+
+#if HANDMADE_INTERNAL
+#else
+#endif
+
+#if HANDMADE_SLOW
+#define ASSERT(x)                                                                   \
+    do                                                                              \
+    {                                                                               \
+        if (!(x))                                                                   \
+        {                                                                           \
+            fprintf(stderr, "ASSERT failed: %s (%s:%d)\n", #x, __FILE__, __LINE__); \
+            abort();                                                                \
+        }                                                                           \
+    } while (0)
+#else
+#define ASSERT(x)
+#endif
+#define ARRAY_COUNT(x) (sizeof(x) / sizeof((x)[0]))
+#define KILOBYTES(x)   (x) * 1024
+#define MEGABYTES(x)   (x) * 1024 * 1024
+#define GIGABYTES(x)   ((u64)(x) * 1024ULL * 1024ULL * 1024ULL)
+#define TERABYTES(x)   ((u64)(x) * 1024ULL * 1024ULL * 1024ULL * 1024ULL)
+
+typedef struct game_memory
+{
+    u64 permanentStorageSize;
+    void *permanentStorage; // NOTE: required to be zeroed by platform
+
+    u64 transientStorageSize;
+    void *transientStorage; // NOTE: required to be zeroed by platform
+
+    b32 isInitialized;
+} game_memory;
 
 typedef struct game_button_state
 {
@@ -85,9 +119,22 @@ typedef struct game_window_dimension
 
 INTERNAL void
 GameUpdateAndRender(
+    game_memory *memory,
     game_offscreen_buffer *buffer,
     game_sound_output_buffer *soundBuffer,
     game_input *gameInput);
+
+typedef struct game_clocks
+{
+    f64 secondsElapsed;
+} game_clocks;
+
+typedef struct game_state
+{
+    s32 blueOffset;
+    s32 greenOffset;
+    s32 toneHz;
+} game_state;
 
 #define HANDMADE_H
 #endif
